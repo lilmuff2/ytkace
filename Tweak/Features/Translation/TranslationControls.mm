@@ -178,6 +178,11 @@ id ControllerForView(UIView *view) {
 - (void)preferencesChanged:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!YTKACEFeatureEnabled(YTKACETranslationKey)) [self stop];
+        if (self.ducked) {
+            double value = [YTKACEPreferenceObject(YTKACETranslationOriginalVolumeKey) doubleValue];
+            if (!std::isfinite(value)) value = 0.15;
+            SetVolume(self.content, self.savedVolume * (float)MIN(MAX(value, 0.0), 1.0));
+        }
         [self updateButtons];
     });
 }
@@ -241,7 +246,6 @@ id ControllerForView(UIView *view) {
         self.audio = [AVPlayer playerWithPlayerItem:item];
         self.audio.volume = 1.0;
         self.audio.allowsExternalPlayback = NO;
-        self.audio.automaticallyWaitsToMinimizeStalling = NO;
         self.audioWaitBegan = NSProcessInfo.processInfo.systemUptime;
         [self tick];
     }];
@@ -302,12 +306,8 @@ id ControllerForView(UIView *view) {
         return;
     }
     if (!playing) return;
-    self.audio.muted = Numeric(self.content, @"isMuted", 0) != 0;
-    // AVPlayer can enter WaitingToPlayAtSpecifiedRate after the first network
-    // buffer. Re-issue play so a transient CDN stall does not end translation.
-    if (self.audio.rate != (float)rate ||
-        self.audio.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate)
-        [self.audio playImmediatelyAtRate:(float)rate];
+    // Original-track mute/zero volume must not mute the independent translation.
+    if (self.audio.rate != (float)rate) [self.audio playImmediatelyAtRate:(float)rate];
     if (self.audio.timeControlStatus == AVPlayerTimeControlStatusPlaying) {
         if (self.loading) {
             self.loading = NO; [self updateButtons];
@@ -360,11 +360,14 @@ void YTKACEInstallTranslationHooks(void) {
     YTKACERegisterOverlayConfigurator(@"translation", ^(UIView *overlay, UIStackView *stack) {
         YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
         UIButton *button = YTKACEOverlayButton(stack, @"YTKACE Yandex Translation", @"character.bubble", coordinator, @selector(toggle:));
+        BOOL registered = [coordinator.buttons containsObject:button];
         [coordinator.buttons addObject:button];
+        if (!registered) {
         UILongPressGestureRecognizer *hold = [[UILongPressGestureRecognizer alloc] initWithTarget:nil action:nil];
         [hold addTarget:coordinator action:@selector(translationVolumeHold:)];
         hold.minimumPressDuration = 0.55;
         [button addGestureRecognizer:hold];
+        }
         for (NSLayoutConstraint *constraint in button.constraints) {
             if (constraint.firstItem == button && constraint.secondItem == nil &&
                 (constraint.firstAttribute == NSLayoutAttributeWidth || constraint.firstAttribute == NSLayoutAttributeHeight))

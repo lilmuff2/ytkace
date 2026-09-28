@@ -23,13 +23,17 @@ players fail with a notice; no private playback-state integer values are assumed
 The existing playback-time hook emits notifications even with SponsorBlock off.
 
 The audio clock is checked every 200ms and on playback-time notifications. A drift
-above 350ms triggers a seek. YouTube pause intent stops audio immediately after
-startup, while lack of video clock progress pauses audio within 500ms. The
+above 350ms triggers a seek. Lack of video clock progress pauses audio within
+500ms; private playback-intent flags are not used. The
 translation follows YouTube's current playback rate. The enabled notice appears
 only after AVPlayer reports actual playback.
 Source volume is restored while
 waiting, when cancelled, and on every exit path. No audio session category or
 system volume is changed. Speeds outside 0.5x–2x stop translation.
+
+Holding the translation button opens original-track volume choices. Changes apply
+immediately while the original is ducked. Muting the original track does not mute
+the translation. Overlay refreshes reuse a single hold recognizer per button.
 
 This first build is experimental. Foreground playback only; entering background,
 PiP, Cast/AirPlay, an ad, another video, or losing headphones stops translation.

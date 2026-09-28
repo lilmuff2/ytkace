@@ -1,6 +1,6 @@
 Package: com.itzzace.ytkace
 Name: YTKACE + Yandex
-Version: 1.1.0-yandex.8
+Version: 1.1.0-yandex.9
 Architecture: iphoneos-arm64
 Description: Open-source YouTube enhancement with downloads, SponsorBlock, background playback and interface controls
 Maintainer: lilmuff2

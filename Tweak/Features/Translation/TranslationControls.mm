@@ -277,10 +277,9 @@ id ControllerForView(UIView *view) {
     if (std::isfinite(audioDuration) && time >= audioDuration - 0.05) {
         [self.audio pause]; [self restoreVolume]; _clock.reset(); return;
     }
-    // Once audio has started, YouTube's intent flag pauses immediately; the clock
-    // still handles startup and buffering without relying on private enum values.
-    BOOL wantsPlayback = Numeric(self.content, @"attemptingToPlay", 1) != 0;
-    BOOL playing = (!self.loading && !wantsPlayback) ? NO : _clock.shouldPlay(time, now);
+    // The advancing video clock handles startup, pauses and buffering without
+    // relying on YouTube's private playback-intent flag.
+    BOOL playing = _clock.shouldPlay(time, now);
     double audioTime = CMTimeGetSeconds(self.audio.currentTime);
     if (!playing) { [self.audio pause]; [self restoreVolume]; }
     if (self.seeking) {

@@ -159,16 +159,16 @@ int main(void) { @autoreleasepool {
 
     // Synchronization: start, pause, buffering, seek forward/backward, 2x and reset.
     YTKACETranslationClock clock;
-    assert(!clock.shouldPlay(20,1,true));
-    assert(clock.shouldPlay(20.2,1.2,true));
-    assert(!clock.shouldPlay(20.2,1.3,false));
-    assert(!clock.shouldPlay(20.2,2,true));
-    assert(clock.shouldPlay(20.4,2.2,true));
-    assert(!clock.shouldPlay(20.4,2.8,true));
-    assert(!clock.shouldPlay(90,3,true));
-    assert(clock.shouldPlay(90.4,3.2,true));
-    assert(!clock.shouldPlay(10,3.4,true));
-    assert(!clock.shouldPlay(NAN,3.6,true));
-    clock.reset(); assert(!clock.shouldPlay(0,4,true));
+    assert(!clock.shouldPlay(20,1));
+    assert(clock.shouldPlay(20.2,1.2));
+    assert(clock.shouldPlay(20.2,1.3)); // Repeated callbacks do not interrupt playback.
+    assert(!clock.shouldPlay(20.2,2)); // A stationary clock pauses the audio.
+    assert(clock.shouldPlay(20.4,2.2));
+    assert(!clock.shouldPlay(20.4,2.8));
+    assert(!clock.shouldPlay(90,3));
+    assert(clock.shouldPlay(90.4,3.2));
+    assert(!clock.shouldPlay(10,3.4));
+    assert(!clock.shouldPlay(NAN,3.6));
+    clock.reset(); assert(!clock.shouldPlay(0,4));
     puts("Translation protocol, cancellation and clock checks passed");
 }}

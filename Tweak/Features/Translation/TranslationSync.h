@@ -5,8 +5,8 @@ struct YTKACETranslationClock {
     double previousTime = NAN;
     double lastAdvance = -INFINITY;
     void reset() { previousTime = NAN; lastAdvance = -INFINITY; }
-    bool shouldPlay(double videoTime, double now, bool wantsPlayback) {
-        if (!std::isfinite(videoTime) || videoTime < 0 || !wantsPlayback) {
+    bool shouldPlay(double videoTime, double now) {
+        if (!std::isfinite(videoTime) || videoTime < 0) {
             reset(); return false;
         }
         if (std::isfinite(previousTime) && videoTime > previousTime && videoTime - previousTime < 2.0)

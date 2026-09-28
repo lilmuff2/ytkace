@@ -13,14 +13,16 @@ Yandex cannot obtain the source audio can still fail. No user media is uploaded.
 
 `TranslationControls` registers through the existing overlay host. It reads the
 active YTPlayerViewController's currentVideoMediaTime and YTSingleVideoController's
-attemptingToPlay, volume and mediaPlayer.rate. These selectors and their method
+volume and mediaPlayer.rate. These selectors and their method
 signatures were checked in the decrypted YouTube 21.38.3 binary. Unsupported
 players fail with a notice; no private playback-state integer values are assumed.
 The existing playback-time hook emits notifications even with SponsorBlock off.
 
 The audio clock is checked every 200ms and on playback-time notifications. A drift
 above 350ms triggers a seek. Lack of video clock progress pauses audio within
-500ms; pause intent stops it at the next check. Source volume is restored while
+500ms, including when the user pauses. Playback does not depend on YouTube's
+private attemptingToPlay flag. The enabled notice appears only after AVPlayer
+reports actual playback. Source volume is restored while
 waiting, when cancelled, and on every exit path. No audio session category or
 system volume is changed. Speeds outside 0.5x–2x stop translation.
 

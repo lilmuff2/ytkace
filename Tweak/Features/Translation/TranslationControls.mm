@@ -167,7 +167,7 @@ id ControllerForView(UIView *view) {
         !videoID.length || !std::isfinite(duration) || duration <= 0 || duration > 14400) {
         YTKACEShowNotice(YTKACELocalized(@"Translation supports regular videos up to 4 hours.")); return;
     }
-    if (!CanSetVolume(content) || !std::isfinite(Numeric(content, @"attemptingToPlay"))) {
+    if (!CanSetVolume(content)) {
         YTKACEShowNotice(YTKACELocalized(@"Translation is not compatible with this YouTube player.")); return;
     }
     self.controller = controller; self.content = content; self.videoID = videoID;
@@ -219,10 +219,6 @@ id ControllerForView(UIView *view) {
         if (now - self.audioWaitBegan > 30) [self fail:@"Could not play the translated audio. Try again."];
         return;
     }
-    if (self.loading) {
-        self.loading = NO; [self updateButtons];
-        YTKACEShowNotice(YTKACELocalized(@"Russian translation is on. Tap to turn off."));
-    }
     double time = Numeric(controller, @"currentVideoMediaTime");
     id mediaPlayer = Object(self.content, @"mediaPlayer");
     double rate = Numeric(mediaPlayer, @"rate");
@@ -234,8 +230,8 @@ id ControllerForView(UIView *view) {
     if (std::isfinite(audioDuration) && time >= audioDuration - 0.05) {
         [self.audio pause]; [self restoreVolume]; _clock.reset(); return;
     }
-    BOOL wantsPlayback = Numeric(self.content, @"attemptingToPlay", 0) != 0;
-    BOOL playing = _clock.shouldPlay(time, now, wantsPlayback);
+    // Use the advancing video clock: attemptingToPlay is not a playback-state contract.
+    BOOL playing = _clock.shouldPlay(time, now);
     double audioTime = CMTimeGetSeconds(self.audio.currentTime);
     if (!playing) { [self.audio pause]; [self restoreVolume]; }
     if (self.seeking) {
@@ -260,6 +256,10 @@ id ControllerForView(UIView *view) {
     self.audio.muted = Numeric(self.content, @"isMuted", 0) != 0;
     if (self.audio.rate != (float)rate) [self.audio playImmediatelyAtRate:(float)rate];
     if (self.audio.timeControlStatus == AVPlayerTimeControlStatusPlaying) {
+        if (self.loading) {
+            self.loading = NO; [self updateButtons];
+            YTKACEShowNotice(YTKACELocalized(@"Russian translation is on. Tap to turn off."));
+        }
         self.audioWaitBegan = 0;
         if (!self.ducked) {
             self.savedVolume = (float)Numeric(self.content, @"volume");

@@ -821,3 +821,25 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE использует данные Spo
 "Color" = "Цвет";
 "Top Bar Buttons" = "Кнопки верхней панели";
 "Tab bar, menus, notices, and player" = "Панель вкладок, меню, уведомления и плеер";
+
+/* Yandex video translation */
+"Yandex Translation Button" = "Кнопка перевода Яндекса";
+"Translate to Russian on demand. Sends the video link to Yandex. Regular videos, 0.5x–2x, foreground only." = "Перевод на русский по нажатию. Ссылка на видео отправляется Яндексу. Обычные ролики, 0,5–2×, только внутри приложения.";
+"Translate to Russian" = "Перевести на русский";
+"Preparing translation. Tap to cancel." = "Подготовка перевода. Нажмите для отмены.";
+"Preparing translation…" = "Подготовка перевода…";
+"Preparing translation: about %ld seconds" = "Подготовка перевода: примерно %ld сек.";
+"Russian translation is on. Tap to turn off." = "Русский перевод включён. Нажмите для отключения.";
+"Translation off" = "Перевод выключен";
+"Translation stopped. Tap the button to enable it again." = "Перевод остановлен. Нажмите кнопку, чтобы включить снова.";
+"Translation supports regular videos up to 4 hours." = "Перевод доступен для обычных роликов длительностью до 4 часов.";
+"Translation is not compatible with this YouTube player." = "Перевод несовместим с этой версией плеера YouTube.";
+"Translation supports playback speeds from 0.5x to 2x." = "Перевод работает на скоростях от 0,5 до 2×.";
+"Could not play the translated audio. Try again." = "Не удалось воспроизвести перевод. Попробуйте ещё раз.";
+"Translation timed out. Try again later." = "Время ожидания перевода истекло. Попробуйте позже.";
+"Yandex translation service is unavailable. Try again later." = "Сервис перевода Яндекса недоступен. Попробуйте позже.";
+"Invalid response from Yandex." = "Некорректный ответ Яндекса.";
+"Invalid audio URL from Yandex." = "Яндекс вернул некорректную ссылку на озвучку.";
+"Yandex requires sign-in for this video." = "Для перевода этого видео Яндекс требует вход в аккаунт.";
+"Yandex could not translate this video." = "Яндексу не удалось перевести это видео.";
+"Yandex could not retrieve the video's audio." = "Яндексу не удалось получить звук видео.";

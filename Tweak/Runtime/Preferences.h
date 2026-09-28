@@ -13,6 +13,7 @@ FOUNDATION_EXPORT NSString * const YTKACEBackgroundPlaybackKey;
 FOUNDATION_EXPORT NSString * const YTKACEPiPKey;
 FOUNDATION_EXPORT NSString * const YTKACESpeedKey;
 FOUNDATION_EXPORT NSString * const YTKACELoopKey;
+FOUNDATION_EXPORT NSString * const YTKACETranslationKey;
 FOUNDATION_EXPORT NSString * const YTKACESleepTimerKey;
 FOUNDATION_EXPORT NSString * const YTKACEPreferencesDidChangeNotification;
 

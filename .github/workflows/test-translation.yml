@@ -1,0 +1,15 @@
+name: Translation tests
+on:
+  push:
+    branches: [main, 'feature/yandex-translation']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  translation:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash Scripts/test-translation.sh
+      - run: python3 -m unittest discover -s Tests -v

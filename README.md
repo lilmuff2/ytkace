@@ -2,6 +2,24 @@
 
 An open-source YouTube enhancement for iOS.
 
+## Yandex translation fork (experimental)
+
+This fork adds an on-demand **Translate to Russian** button to the video player.
+Tap the speech-bubble button to request Russian voice-over from Yandex; tap again
+to cancel or restore the original audio. The button is enabled by default and can
+be hidden in YTKACE's button settings.
+
+- Regular videos up to four hours; playback at 0.5x–2x while the app is active.
+- Follows pauses, seeking and SponsorBlock skips; lowers the original track to 15%.
+- Stops on video changes, ads, backgrounding, PiP, external playback or interruptions.
+- No proxy, account sign-in, downloaded translations, live videos or Shorts support.
+- The video link, duration and source-language hint are sent directly to Yandex
+  only after tapping the button. The unofficial service may reject videos or change.
+- Built against YouTube 21.38.3 (iOS 17+). Device playback remains to be verified.
+
+Build using the existing IPA workflow. See [translation validation](docs/yandex-translation.md)
+for checks and known limitations.
+
 ## Features
 
 | Area | Included |

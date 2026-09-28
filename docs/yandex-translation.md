@@ -8,8 +8,12 @@ JavaScript runtime or extra build dependency is required. Requests are cancelled
 when the user disables translation or changes videos. A generation counter drops
 late replies. HTTP transient errors are retried at most twice per request. Overall
 translation waiting is limited to 15 minutes; partial tracks wait for completion.
-Audio-requested replies use the same empty-audio fallback as vot.js; videos where
-Yandex cannot obtain the source audio can still fail. No user media is uploaded.
+Audio-requested replies download the video's source audio through the existing
+SABR downloader and upload it to Yandex in 5,295,308-byte chunks. No empty-audio
+fallback is sent. The download is capped at 256 MiB and 180 seconds; cancellation
+stops it and scratch files are removed. A cached failure is retried once with
+bypassCache before reporting the server's error. Only the selected video's audio
+is uploaded; local library files are not used.
 
 `TranslationControls` registers through the existing overlay host. It reads the
 active YTPlayerViewController's currentVideoMediaTime and YTSingleVideoController's
@@ -41,7 +45,8 @@ python3 -m unittest discover -s Tests -v
 ```
 
 The native check exercises malformed protobuf, HMAC, URL restrictions, successful
-translation, waiting/partial replies, audio fallback, HTTP failures/retry, deadline,
+translation, waiting/partial replies, single/multipart audio uploads, cached failure
+retry, cancellation during source download, HTTP failures/retry, deadline,
 cancellation followed by a new video, and clock behavior. It uses NSURLProtocol
 fixtures and makes no live network requests. GitHub Actions runs it on macOS.
 

@@ -14,7 +14,9 @@ be hidden in YTKACE's button settings.
 - Stops on video changes, ads, backgrounding, PiP, external playback or interruptions.
 - No proxy, account sign-in, downloaded translations, live videos or Shorts support.
 - The video link, duration and source-language hint are sent directly to Yandex
-  only after tapping the button. The unofficial service may reject videos or change.
+  only after tapping the button. When requested by Yandex, the selected video's
+  source audio is downloaded and uploaded in chunks. The unofficial service may
+  reject videos or change.
 - Built against YouTube 21.38.3 (iOS 17+). Device playback remains to be verified.
 
 Build using the existing IPA workflow. See [translation validation](docs/yandex-translation.md)

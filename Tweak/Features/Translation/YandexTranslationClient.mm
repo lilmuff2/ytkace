@@ -35,8 +35,8 @@ bool ReadVarint(const uint8_t *bytes, NSUInteger size, NSUInteger &offset, uint6
     return false;
 }
 // Only the flat wire types needed by the VOT replies; reject malformed lengths/varints.
-NSDictionary<NSNumber *, id> *Decode(NSData *data) {
-    if (!data.length || data.length > 1024 * 1024) return nil;
+NSDictionary<NSNumber *, id> *Decode(NSData *data, NSUInteger limit = 1024 * 1024) {
+    if (!data.length || data.length > limit) return nil;
     auto bytes = static_cast<const uint8_t *>(data.bytes);
     NSUInteger offset = 0;
     NSMutableDictionary *fields = [NSMutableDictionary dictionary];
@@ -114,7 +114,10 @@ NSURL *AudioURL(NSString *value) {
 @property(nonatomic) NSTimeInterval sessionExpires;
 @property(nonatomic) BOOL firstRequest;
 @property(nonatomic) NSUInteger transientFailures;
-@property(nonatomic) BOOL sentAudioFallback;
+@property(nonatomic) BOOL sentAudio;
+@property(nonatomic) BOOL bypassCache;
+@property(nonatomic, strong) NSData *sourceAudio;
+@property(nonatomic, copy) NSString *audioFileID;
 @property(nonatomic, copy) void (^progress)(NSInteger);
 @property(nonatomic, copy) void (^completion)(NSURL *, NSError *);
 @end
@@ -140,6 +143,7 @@ NSURL *AudioURL(NSString *value) {
     [self.task cancel]; self.task = nil;
     [self.session invalidateAndCancel]; self.session = nil;
     self.completion = nil; self.progress = nil; self.secret = nil;
+    self.sourceAudio = nil; self.audioFileID = nil;
 }
 - (void)finish:(NSURL *)url error:(NSError *)error {
     void (^completion)(NSURL *, NSError *) = self.completion;
@@ -216,7 +220,8 @@ NSURL *AudioURL(NSString *value) {
     self.videoID = videoID; self.duration = duration;
     self.language = language.length && language.length <= 12 ? language : @"en";
     self.progress = progress; self.completion = completion;
-    self.firstRequest = YES; self.sentAudioFallback = NO; self.transientFailures = 0;
+    self.firstRequest = YES; self.sentAudio = NO; self.transientFailures = 0;
+    self.bypassCache = NO;
     self.deadline = NSProcessInfo.processInfo.systemUptime + 15 * 60;
     self.session = [NSURLSession sessionWithConfiguration:self.configuration delegate:self delegateQueue:nil];
     [self createSession];
@@ -262,6 +267,7 @@ NSURL *AudioURL(NSString *value) {
     [body appendBytes:&bits length:sizeof(bits)];
     Integer(body, 7, 1); String(body, 8, self.language);
     String(body, 14, @"ru"); Integer(body, 15, 1); Integer(body, 16, 2);
+    if (self.bypassCache) Integer(body, 17, 1);
     [self post:@"/video-translation/translate" body:body method:@"POST" json:NO signedSession:YES completion:^(NSData *data) {
         NSDictionary *fields = Decode(data);
         NSInteger status = Number(fields, @4, -1);
@@ -275,11 +281,14 @@ NSURL *AudioURL(NSString *value) {
         } else if (status == 2 || status == 3 || status == 5) {
             // ponytail: wait for the complete track; partial-track replacement can be added later.
             [self waitAndPoll:remaining];
-        } else if (status == 6 && !self.sentAudioFallback && Text(fields, @7).length) {
-            self.sentAudioFallback = YES;
-            [self sendAudioFallback:Text(fields, @7)];
+        } else if (status == 6 && !self.sentAudio && Text(fields, @7).length) {
+            self.sentAudio = YES;
+            [self requestAudio:Text(fields, @7)];
         } else if (status == 6) {
             [self waitAndPoll:remaining];
+        } else if (status == 0 && self.audioProvider && !self.sentAudio && !self.bypassCache) {
+            // A prior failed attempt may be cached; retry once with source upload available.
+            self.bypassCache = YES; self.firstRequest = YES; [self waitAndPoll:5];
         } else {
             NSString *message = Text(fields, @9);
             if (status == 0 && message.length && message.length <= 300) {
@@ -290,25 +299,60 @@ NSURL *AudioURL(NSString *value) {
         }
     }];
 }
-- (void)sendAudioFallback:(NSString *)translationID {
-    NSString *url = [@"https://youtu.be/" stringByAppendingString:self.videoID];
-    NSData *json = [NSJSONSerialization dataWithJSONObject:@{@"video_url": url} options:0 error:nil];
-    [self post:@"/video-translation/fail-audio-js" body:json method:@"PUT" json:YES signedSession:NO completion:^(NSData *data) {
-        id reply = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        if (![reply isKindOfClass:NSDictionary.class] || ![reply[@"status"] isEqual:@1]) {
+- (void)requestAudio:(NSString *)translationID {
+    if (!self.audioProvider) {
+        [self finish:nil error:Failure(@"Could not load source audio for translation.")]; return;
+    }
+    NSUInteger generation = self.generation;
+    __block BOOL received = NO;
+    __weak __typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 180 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        __typeof(self) self = weakSelf;
+        if (self && generation == self.generation && !received)
+            [self finish:nil error:Failure(@"Source audio download timed out.")];
+    });
+    self.audioProvider(^(NSData *data, NSInteger itag, NSError *error) {
+        __typeof(self) self = weakSelf;
+        if (!self || generation != self.generation || received) return;
+        received = YES;
+        if (error || !data.length || data.length > 256 * 1024 * 1024 || itag <= 0) {
+            [self finish:nil error:error ?: Failure(@"Could not load source audio for translation.")]; return;
+        }
+        self.sourceAudio = data;
+        NSData *metadata = [NSJSONSerialization dataWithJSONObject:@{
+            @"downloadType": @"web_api_get_all_generating_urls_data_from_iframe",
+            @"itag": @(itag), @"minChunkSize": @5295308,
+            @"fileSize": [NSString stringWithFormat:@"%lu", (unsigned long)data.length]
+        } options:0 error:nil];
+        self.audioFileID = [[NSString alloc] initWithData:metadata encoding:NSUTF8StringEncoding];
+        [self uploadAudio:translationID chunk:0];
+    });
+}
+- (void)uploadAudio:(NSString *)translationID chunk:(NSUInteger)index {
+    const NSUInteger chunkSize = 5295308;
+    NSUInteger count = (self.sourceAudio.length + chunkSize - 1) / chunkSize;
+    NSUInteger offset = index * chunkSize;
+    NSData *chunk = [self.sourceAudio subdataWithRange:NSMakeRange(offset, MIN(chunkSize, self.sourceAudio.length - offset))];
+    NSMutableData *body = [NSMutableData data], *audio = [NSMutableData data];
+    String(body, 1, translationID);
+    String(body, 2, [@"https://youtu.be/" stringByAppendingString:self.videoID]);
+    Bytes(audio, 2, chunk);
+    if (count == 1) {
+        String(audio, 1, self.audioFileID); Bytes(body, 6, audio);
+    } else {
+        Integer(audio, 1, index);
+        NSMutableData *partial = [NSMutableData data];
+        Bytes(partial, 1, audio); Integer(partial, 2, count);
+        String(partial, 3, self.audioFileID); Integer(partial, 4, 1);
+        Bytes(body, 4, partial);
+    }
+    [self post:@"/video-translation/audio" body:body method:@"PUT" json:NO signedSession:YES completion:^(NSData *reply) {
+        NSInteger status = Number(Decode(reply), @1, -1);
+        if ((index + 1 == count && status != 2) || (status != 1 && status != 2)) {
             [self finish:nil error:Failure(@"Yandex could not retrieve the video's audio.")]; return;
         }
-        NSMutableData *audioInfo = [NSMutableData data];
-        String(audioInfo, 1, [@"fallback-empty-audio:video-translation:" stringByAppendingString:self.videoID]);
-        NSMutableData *body = [NSMutableData data];
-        String(body, 1, translationID); String(body, 2, url); Bytes(body, 6, audioInfo);
-        [self post:@"/video-translation/audio" body:body method:@"PUT" json:NO signedSession:YES completion:^(NSData *audioReply) {
-            NSInteger status = Number(Decode(audioReply), @1, -1);
-            if (status != 1 && status != 2) {
-                [self finish:nil error:Failure(@"Yandex could not retrieve the video's audio.")]; return;
-            }
-            [self waitAndPoll:5];
-        }];
+        if (index + 1 < count) [self uploadAudio:translationID chunk:index + 1];
+        else { self.sourceAudio = nil; [self waitAndPoll:5]; }
     }];
 }
 @end

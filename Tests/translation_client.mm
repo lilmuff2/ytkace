@@ -122,19 +122,65 @@ int main(void) { @autoreleasepool {
         [client translateVideoID:@"jNQXAC9IVRw" duration:19 language:@"en" progress:^(__unused NSInteger n) {} completion:^(__unused NSURL *url,__unused NSError *error) { assert(!url && error); done = YES; }];
         Until(^BOOL { return done; });
     }
-    // The service's audio fallback uses PUT and no upload of the user's media.
-    [requests removeAllObjects]; __block BOOL progress = NO;
+    // Real source bytes, single and multipart uploads, signed PUT and chunk ordering.
+    __block BOOL progress = NO;
+    for (NSUInteger size : {NSUInteger(17), NSUInteger(5295308 + 17)}) {
+        NSData *source = [NSMutableData dataWithLength:size];
+        __block NSUInteger uploaded = 0, chunkIndex = 0;
+        progress = NO;
+        client.audioProvider = ^(void (^completion)(NSData *, NSInteger, NSError *)) { completion(source, 140, nil); };
+        responseForRequest = ^NSData *(NSURLRequest *request) {
+            if ([request.URL.path isEqual:@"/session/create"]) return SessionReply();
+            if ([request.URL.path isEqual:@"/video-translation/translate"]) return Reply(6);
+            assert([request.URL.path isEqual:@"/video-translation/audio"]);
+            assert([request.HTTPMethod isEqual:@"PUT"]);
+            NSData *body = Body(request);
+            assert([[request valueForHTTPHeaderField:@"Vtrans-Signature"] isEqual:Signature(body)]);
+            NSDictionary *fields = Decode(body, 6 * 1024 * 1024);
+            assert([Text(fields,@1) isEqual:@"translation-id"]);
+            NSDictionary *audioFields;
+            NSString *metadata;
+            if (size <= 5295308) {
+                audioFields = Decode(fields[@6]); metadata = Text(audioFields,@1);
+            } else {
+                NSDictionary *partial = Decode(fields[@4], 6 * 1024 * 1024);
+                assert(Number(partial,@2,0) == 2 && Number(partial,@4,0) == 1);
+                metadata = Text(partial,@3);
+                audioFields = Decode(partial[@1], 6 * 1024 * 1024);
+                assert(Number(audioFields,@1,-1) == (NSInteger)chunkIndex++);
+            }
+            NSDictionary *info = [NSJSONSerialization JSONObjectWithData:[metadata dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+            assert([info[@"itag"] integerValue] == 140 && [info[@"fileSize"] integerValue] == (NSInteger)size);
+            NSData *chunk = audioFields[@2];
+            assert(chunk.length == MIN(NSUInteger(5295308), size - uploaded));
+            assert([chunk isEqual:[source subdataWithRange:NSMakeRange(uploaded, chunk.length)]]);
+            uploaded += chunk.length;
+            NSMutableData *reply = [NSMutableData data]; Integer(reply,1,uploaded == size ? 2 : 1); return reply;
+        };
+        [client translateVideoID:@"jNQXAC9IVRw" duration:19 language:@"en" progress:^(__unused NSInteger n) { progress = YES; } completion:^(__unused NSURL *url,__unused NSError *error) { assert(false); }];
+        Until(^BOOL { return progress; }); assert(uploaded == size); [client cancel];
+    }
+    // A late source download after cancellation must never upload audio.
+    __block void (^deliverAudio)(NSData *, NSInteger, NSError *);
+    client.audioProvider = ^(void (^completion)(NSData *, NSInteger, NSError *)) { deliverAudio = [completion copy]; };
+    responseForRequest = ^NSData *(NSURLRequest *request) { return [request.URL.path isEqual:@"/session/create"] ? SessionReply() : Reply(6); };
+    [client translateVideoID:@"jNQXAC9IVRw" duration:19 language:@"en" progress:^(__unused NSInteger n) {} completion:^(__unused NSURL *url,__unused NSError *error) { assert(false); }];
+    Until(^BOOL { return deliverAudio != nil; }); [client cancel]; NSUInteger beforeLateAudio = requests.count;
+    deliverAudio([@"audio" dataUsingEncoding:NSUTF8StringEncoding],140,nil); Pump(0.03);
+    assert(requests.count == beforeLateAudio); client.audioProvider = nil;
+
+    // Retry a cached failure once, then report the error rather than loop forever.
+    polls = 0; progress = NO; done = NO;
+    client.audioProvider = ^(void (^completion)(NSData *, NSInteger, NSError *)) { (void)completion; assert(false); };
     responseForRequest = ^NSData *(NSURLRequest *request) {
-        NSString *path = request.URL.path;
-        if ([path isEqual:@"/session/create"]) return SessionReply();
-        if ([path isEqual:@"/video-translation/translate"]) return Reply(6);
-        assert([request.HTTPMethod isEqual:@"PUT"]);
-        if ([path isEqual:@"/video-translation/fail-audio-js"]) return [@"{\"status\":1}" dataUsingEncoding:NSUTF8StringEncoding];
-        assert([path isEqual:@"/video-translation/audio"]);
-        NSMutableData *data = [NSMutableData data]; Integer(data,1,2); return data;
+        if ([request.URL.path isEqual:@"/session/create"]) return SessionReply();
+        NSDictionary *fields = Decode(Body(request));
+        assert(Number(fields,@17,0) == (polls++ == 0 ? 0 : 1));
+        return Reply(0);
     };
-    [client translateVideoID:@"jNQXAC9IVRw" duration:19 language:@"en" progress:^(__unused NSInteger n) { progress = YES; } completion:^(__unused NSURL *url,__unused NSError *error) { assert(false); }];
-    Until(^BOOL { return progress; }); assert(requests.count == 4); [client cancel];
+    [client translateVideoID:@"jNQXAC9IVRw" duration:19 language:@"en" progress:^(__unused NSInteger n) { progress = YES; } completion:^(NSURL *url, NSError *error) { assert(!url && error); done = YES; }];
+    Until(^BOOL { return progress; }); [client poll]; Until(^BOOL { return done; }); assert(polls == 2);
+    client.audioProvider = nil;
 
     // Cancel video A while its response is in flight, then immediately start B.
     __block BOOL oldCompleted = NO; done = NO; responseDelay = 0.1;

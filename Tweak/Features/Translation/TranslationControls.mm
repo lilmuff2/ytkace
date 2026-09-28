@@ -1,5 +1,7 @@
 #import "YandexTranslationClient.h"
 #import "TranslationSync.h"
+#import "../Downloads/StreamResolver.h"
+#import "../Downloads/SABRDownloader.h"
 #import "../../YTKACE.h"
 #import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
@@ -54,6 +56,7 @@ id ControllerForView(UIView *view) {
 }
 @property(nonatomic, strong) NSHashTable<UIButton *> *buttons;
 @property(nonatomic, strong) YTKACEYandexTranslationClient *client;
+@property(nonatomic, strong) YTKACESABRTask *sourceTask;
 @property(nonatomic, weak) id controller;
 @property(nonatomic, strong) id content;
 @property(nonatomic, copy) NSString *videoID;
@@ -84,6 +87,10 @@ id ControllerForView(UIView *view) {
     if ((self = [super init])) {
         _buttons = NSHashTable.weakObjectsHashTable;
         _client = [YTKACEYandexTranslationClient new];
+        __weak __typeof(self) weakSelf = self;
+        _client.audioProvider = ^(void (^completion)(NSData *, NSInteger, NSError *)) {
+            [weakSelf downloadSourceAudio:completion];
+        };
         NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
         [center addObserver:self selector:@selector(videoActivated:) name:@"YTKACEVideoDidActivate" object:nil];
         [center addObserver:self selector:@selector(timeChanged:) name:@"YTKACEPlaybackTimeDidChange" object:nil];
@@ -109,6 +116,7 @@ id ControllerForView(UIView *view) {
 }
 - (void)stop {
     self.generation++;
+    [self.sourceTask cancel]; self.sourceTask = nil;
     [self.client cancel];
     [self.timer invalidate]; self.timer = nil;
     [self.audio pause]; [self.audio.currentItem cancelPendingSeeks]; self.audio = nil;
@@ -119,6 +127,43 @@ id ControllerForView(UIView *view) {
 }
 - (void)fail:(NSString *)message {
     [self stop]; YTKACEShowNotice(YTKACELocalized(message));
+}
+- (void)downloadSourceAudio:(void (^)(NSData *, NSInteger, NSError *))completion {
+    id response = Object(self.controller, @"contentPlayerResponse");
+    if (![[YTKACEStreamResolver videoIDFromPlayerResponse:response] isEqualToString:self.videoID])
+        response = YTKACECachedPlayerResponse(self.videoID);
+    YTKACEStreamOption *option = [YTKACEStreamResolver audioOptionsFromPlayerResponse:response].firstObject
+        ?: [YTKACEStreamResolver bestAudioFromPlayerResponse:response];
+    if (!option) {
+        completion(nil, 0, [NSError errorWithDomain:@"YTKACE.YandexTranslation" code:1 userInfo:@{
+            NSLocalizedDescriptionKey: YTKACELocalized(@"Could not load source audio for translation.")}]);
+        return;
+    }
+    YTKACEShowNotice(YTKACELocalized(@"Downloading audio for Yandex translation…"));
+    NSUInteger generation = self.generation;
+    __weak __typeof(self) weakSelf = self;
+    self.sourceTask = [YTKACESABRDownloader downloadPlayerResponse:response videoOption:option
+        audioOption:option audioOnly:YES videoID:self.videoID identifier:NSUUID.UUID.UUIDString
+        progress:^(double audioProgress, double videoProgress, int64_t audioBytes, int64_t videoBytes, NSInteger phase) {
+            __typeof(self) self = weakSelf;
+            if (self && generation == self.generation && audioBytes > 256 * 1024 * 1024)
+                [self fail:@"Source audio is too large for translation."];
+        } completion:^(NSURL *videoURL, NSURL *audioURL, NSError *error) {
+            __typeof(self) self = weakSelf;
+            NSData *data = nil;
+            if (self && generation == self.generation && !error && audioURL) {
+                NSNumber *size;
+                [audioURL getResourceValue:&size forKey:NSURLFileSizeKey error:&error];
+                if (size.unsignedLongLongValue > 0 && size.unsignedLongLongValue <= 256 * 1024 * 1024)
+                    data = [NSData dataWithContentsOfURL:audioURL options:NSDataReadingMappedIfSafe error:&error];
+            }
+            NSURL *scratch = audioURL.URLByDeletingLastPathComponent;
+            if ([scratch.lastPathComponent hasPrefix:@"YTKACE-"])
+                [NSFileManager.defaultManager removeItemAtURL:scratch error:nil];
+            if (!self || generation != self.generation) return;
+            self.sourceTask = nil;
+            completion(data, option.itag, error);
+        }];
 }
 - (void)interrupted:(NSNotification *)notification {
     if ([notification.name isEqualToString:AVAudioSessionInterruptionNotification] &&
@@ -188,6 +233,7 @@ id ControllerForView(UIView *view) {
         __typeof(self) self = weakSelf;
         if (!self || generation != self.generation) return;
         if (error) { [self fail:error.localizedDescription]; return; }
+        [self.sourceTask cancel]; self.sourceTask = nil;
         if (![videoID isEqualToString:VideoID(self.controller)]) { [self stop]; return; }
         AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
         item.audioTimePitchAlgorithm = AVAudioTimePitchAlgorithmTimeDomain;

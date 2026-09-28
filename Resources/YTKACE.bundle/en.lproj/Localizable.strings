@@ -824,7 +824,11 @@ Licensed under CC BY-NC-SA 4.0.";
 
 /* Yandex video translation */
 "Yandex Translation Button" = "Yandex Translation Button";
-"Translate to Russian on demand. Sends the video link to Yandex. Regular videos, 0.5x–2x, foreground only." = "Translate to Russian on demand. Sends the video link to Yandex. Regular videos, 0.5x–2x, foreground only.";
+"Translate to Russian on demand. Sends the video link and source audio to Yandex when needed. Regular videos, 0.5x–2x, foreground only." = "Translate to Russian on demand. Sends the video link and source audio to Yandex when needed. Regular videos, 0.5x–2x, foreground only.";
+"Could not load source audio for translation." = "Could not load source audio for translation.";
+"Source audio download timed out." = "Source audio download timed out.";
+"Source audio is too large for translation." = "Source audio is too large for translation.";
+"Downloading audio for Yandex translation…" = "Downloading audio for Yandex translation…";
 "Translate to Russian" = "Translate to Russian";
 "Preparing translation. Tap to cancel." = "Preparing translation. Tap to cancel.";
 "Preparing translation…" = "Preparing translation…";

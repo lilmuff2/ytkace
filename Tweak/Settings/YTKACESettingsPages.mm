@@ -1473,7 +1473,7 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
             YTKACEToggle(@"PiP Button", YTKACEPiPKey, @"", @""),
             YTKACEToggle(@"Loop Button", YTKACELoopKey, @"", @""),
             YTKACEToggleDetail(@"Yandex Translation Button",
-                @"Translate to Russian on demand. Sends the video link to Yandex. Regular videos, 0.5x–2x, foreground only.",
+                @"Translate to Russian on demand. Sends the video link and source audio to Yandex when needed. Regular videos, 0.5x–2x, foreground only.",
                 YTKACETranslationKey),
             YTKACEToggle(@"Sleep Timer Button", YTKACESleepTimerKey, @"", @""),
             YTKACEToggle(@"Background Audio", YTKACEBackgroundPlaybackKey, @"", @"")

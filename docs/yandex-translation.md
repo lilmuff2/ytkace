@@ -24,19 +24,21 @@ The existing playback-time hook emits notifications even with SponsorBlock off.
 
 The audio clock is checked every 200ms and on playback-time notifications. A drift
 above 350ms triggers a seek. Lack of video clock progress pauses audio within
-500ms; private playback-intent flags are not used. The
+500ms as a buffering fallback; explicit play/pause commands are hooked for immediate
+pause handling. Private playback-intent flags are not used. The
 translation follows YouTube's current playback rate. The enabled notice appears
 only after AVPlayer reports actual playback.
-Source volume is restored while
-waiting, when cancelled, and on every exit path. No audio session category or
-system volume is changed. Speeds outside 0.5x–2x stop translation.
+Source volume stays at the chosen level during pauses, seeks and buffering after
+translation has started, and is restored on stop/error/end. No audio session
+category or system volume is changed. Supported speeds are 0.25x–5x.
 
 Holding the translation button opens original-track volume choices. Changes apply
 immediately while the original is ducked. Muting the original track does not mute
 the translation. Overlay refreshes reuse a single hold recognizer per button.
 
-This first build is experimental. Foreground playback only; entering background,
-PiP, Cast/AirPlay, an ad, another video, or losing headphones stops translation.
+This build is experimental. Background playback relies on YouTube background audio
+being enabled and iOS keeping the audio session active. PiP, Cast/AirPlay, an ad,
+another video, or losing headphones stops translation.
 Account-required translations are reported as unsupported. Source language uses
 Yandex detection with an English hint and forceSourceLang=false.
 

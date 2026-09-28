@@ -66,6 +66,7 @@ id ControllerForView(UIView *view) {
 @property(nonatomic) BOOL loading;
 @property(nonatomic) BOOL seeking;
 @property(nonatomic) BOOL ducked;
+@property(nonatomic) BOOL pausedByYouTube;
 @property(nonatomic) float savedVolume;
 @property(nonatomic) NSTimeInterval audioWaitBegan;
 @property(nonatomic) NSTimeInterval seekBegan;
@@ -96,7 +97,6 @@ id ControllerForView(UIView *view) {
         [center addObserver:self selector:@selector(videoActivated:) name:@"YTKACEVideoDidActivate" object:nil];
         [center addObserver:self selector:@selector(timeChanged:) name:@"YTKACEPlaybackTimeDidChange" object:nil];
         [center addObserver:self selector:@selector(preferencesChanged:) name:YTKACEPreferencesDidChangeNotification object:nil];
-        [center addObserver:self selector:@selector(interrupted:) name:UIApplicationWillResignActiveNotification object:nil];
         [center addObserver:self selector:@selector(interrupted:) name:AVAudioSessionInterruptionNotification object:nil];
         [center addObserver:self selector:@selector(interrupted:) name:AVAudioSessionRouteChangeNotification object:nil];
     }
@@ -124,6 +124,7 @@ id ControllerForView(UIView *view) {
     [self restoreVolume];
     self.content = nil; self.controller = nil; self.videoID = nil;
     self.loading = NO; self.seeking = NO; self.audioWaitBegan = 0;
+    self.pausedByYouTube = NO;
     _clock.reset(); [self updateButtons];
 }
 - (void)fail:(NSString *)message {
@@ -242,7 +243,7 @@ id ControllerForView(UIView *view) {
         [self.sourceTask cancel]; self.sourceTask = nil;
         if (![videoID isEqualToString:VideoID(self.controller)]) { [self stop]; return; }
         AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
-        item.audioTimePitchAlgorithm = AVAudioTimePitchAlgorithmTimeDomain;
+        item.audioTimePitchAlgorithm = AVAudioTimePitchAlgorithmSpectral;
         self.audio = [AVPlayer playerWithPlayerItem:item];
         self.audio.volume = 1.0;
         self.audio.allowsExternalPlayback = NO;
@@ -256,9 +257,7 @@ id ControllerForView(UIView *view) {
     if (![self.videoID isEqualToString:VideoID(controller)] || self.content != Object(controller, @"activeVideo")) {
         [self stop]; return;
     }
-    if (!YTKACEFeatureEnabled(YTKACETranslationKey) || [self unsupported:controller] ||
-        UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
-        ![controller isKindOfClass:UIViewController.class] || !((UIViewController *)controller).viewIfLoaded.window) {
+    if (!YTKACEFeatureEnabled(YTKACETranslationKey) || [self unsupported:controller]) {
         [self fail:@"Translation stopped. Tap the button to enable it again."]; return;
     }
     if (!self.audio) return;
@@ -274,9 +273,10 @@ id ControllerForView(UIView *view) {
     double time = Numeric(controller, @"currentVideoMediaTime");
     id mediaPlayer = Object(self.content, @"mediaPlayer");
     double rate = Numeric(mediaPlayer, @"rate");
+    if (self.pausedByYouTube || rate == 0) { [self.audio pause]; _clock.reset(); return; }
     if (!std::isfinite(rate) || rate <= 0) rate = Numeric(Object(controller, @"activeVideoPlayerOverlay"), @"currentPlaybackRate");
-    if (!std::isfinite(rate) || rate < 0.5 || rate > 2.0 || !std::isfinite(time) || time < 0) {
-        [self fail:@"Translation supports playback speeds from 0.5x to 2x."]; return;
+    if (!std::isfinite(rate) || rate < 0.25 || rate > 5.0 || !std::isfinite(time) || time < 0) {
+        [self fail:@"Translation supports playback speeds from 0.25x to 5x."]; return;
     }
     double audioDuration = CMTimeGetSeconds(item.duration);
     if (std::isfinite(audioDuration) && time >= audioDuration - 0.05) {
@@ -286,13 +286,13 @@ id ControllerForView(UIView *view) {
     // relying on YouTube's private playback-intent flag.
     BOOL playing = _clock.shouldPlay(time, now);
     double audioTime = CMTimeGetSeconds(self.audio.currentTime);
-    if (!playing) { [self.audio pause]; [self restoreVolume]; }
+    if (!playing) [self.audio pause];
     if (self.seeking) {
         if (now - self.seekBegan > 10) [self fail:@"Could not play the translated audio. Try again."];
         return;
     }
     if (!std::isfinite(audioTime) || fabs(time - audioTime) > 0.35) {
-        [self.audio pause]; [self restoreVolume]; self.seeking = YES; self.seekBegan = now;
+        [self.audio pause]; self.seeking = YES; self.seekBegan = now;
         NSUInteger generation = self.generation;
         __weak __typeof(self) weakSelf = self;
         [self.audio seekToTime:CMTimeMakeWithSeconds(time, 600) toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished) {
@@ -301,6 +301,11 @@ id ControllerForView(UIView *view) {
                 if (!self || generation != self.generation) return;
                 self.seeking = NO;
                 if (!finished) [self fail:@"Could not play the translated audio. Try again."];
+                else if (!self.pausedByYouTube && playing) {
+                    double currentRate = Numeric(Object(self.content, @"mediaPlayer"), @"rate");
+                    if (std::isfinite(currentRate) && currentRate >= 0.25 && currentRate <= 5.0)
+                        [self.audio playImmediatelyAtRate:(float)currentRate];
+                }
             });
         }];
         return;
@@ -325,7 +330,6 @@ id ControllerForView(UIView *view) {
             self.ducked = YES; SetVolume(self.content, self.savedVolume * (float)originalVolume);
         }
     } else {
-        [self restoreVolume];
         if (!self.audioWaitBegan) self.audioWaitBegan = now;
         if (now - self.audioWaitBegan > 30) [self fail:@"Could not play the translated audio. Try again."];
     }
@@ -356,7 +360,31 @@ static void YTKACETranslationVolumeHold(UILongPressGestureRecognizer *gesture) {
 }
 @end
 
+static IMP OriginalTranslationPause, OriginalTranslationPlay;
+static void TranslationPause(id receiver, SEL selector, int reason) {
+    dispatch_block_t pause = ^{
+        YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
+        if (coordinator.content == receiver) {
+            coordinator.pausedByYouTube = YES;
+            [coordinator.audio pause];
+        }
+    };
+    if (NSThread.isMainThread) pause(); else dispatch_async(dispatch_get_main_queue(), pause);
+    ((void (*)(id, SEL, int))OriginalTranslationPause)(receiver, selector, reason);
+}
+static void TranslationPlay(id receiver, SEL selector) {
+    ((void (*)(id, SEL))OriginalTranslationPlay)(receiver, selector);
+    dispatch_block_t play = ^{
+        YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
+        if (coordinator.content == receiver) { coordinator.pausedByYouTube = NO; [coordinator tick]; }
+    };
+    if (NSThread.isMainThread) play(); else dispatch_async(dispatch_get_main_queue(), play);
+}
 void YTKACEInstallTranslationHooks(void) {
+    YTKACEInstallInstanceHook(@"YTSingleVideoController", @"pauseWithStoppageReason:",
+        (IMP)TranslationPause, &OriginalTranslationPause);
+    YTKACEInstallInstanceHook(@"YTSingleVideoController", @"play",
+        (IMP)TranslationPlay, &OriginalTranslationPlay);
     YTKACERegisterOverlayConfigurator(@"translation", ^(UIView *overlay, UIStackView *stack) {
         YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
         UIButton *button = YTKACEOverlayButton(stack, @"YTKACE Yandex Translation", @"character.bubble", coordinator, @selector(toggle:));

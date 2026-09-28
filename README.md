@@ -9,9 +9,9 @@ Tap the speech-bubble button to request Russian voice-over from Yandex; tap agai
 to cancel or restore the original audio. The button is enabled by default and can
 be hidden in YTKACE's button settings.
 
-- Regular videos up to four hours; playback at 0.5x–2x while the app is active.
+- Regular videos up to four hours; playback at 0.25x–5x. Background playback requires background audio enabled.
 - Follows pauses, seeking and SponsorBlock skips; original-audio volume is configurable.
-- Stops on video changes, ads, backgrounding, PiP, external playback or interruptions.
+- Stops on video changes, ads, PiP, external playback or interruptions.
 - No proxy, account sign-in, downloaded translations, live videos or Shorts support.
 - The video link, duration and source-language hint are sent directly to Yandex
   only after tapping the button. When requested by Yandex, the selected video's

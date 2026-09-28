@@ -150,7 +150,7 @@ id ControllerForView(UIView *view) {
     return !controller || YTKACEPlayerIsShorts(controller) ||
         Numeric(controller, @"isPlayingAd", 0) || Numeric(controller, @"isPlayingAdIntro", 0) ||
         Numeric(controller, @"isPlayingAdSurvey", 0) || Numeric(controller, @"isPictureInPictureActive", 0) ||
-        Numeric(controller, @"isExternalPlaybackActive", 0) || Numeric(controller, @"isInlinePlaybackActive", 0) ||
+        Numeric(controller, @"isExternalPlaybackActive", 0) ||
         Numeric(controller, @"currentVideoIsLocal", 0);
 }
 - (void)toggle:(UIButton *)button {

@@ -69,12 +69,12 @@ id ControllerForView(UIView *view) {
 @property(nonatomic) float savedVolume;
 @property(nonatomic) NSTimeInterval audioWaitBegan;
 @property(nonatomic) NSTimeInterval seekBegan;
-@property(nonatomic) float playbackRate;
 + (instancetype)shared;
 - (void)toggle:(UIButton *)button;
 - (void)updateButtons;
 - (void)stop;
 - (void)tick;
+- (void)translationVolumeHold:(UILongPressGestureRecognizer *)gesture;
 @end
 
 @implementation YTKACETranslationCoordinator
@@ -123,7 +123,7 @@ id ControllerForView(UIView *view) {
     [self.audio pause]; [self.audio.currentItem cancelPendingSeeks]; self.audio = nil;
     [self restoreVolume];
     self.content = nil; self.controller = nil; self.videoID = nil;
-    self.loading = NO; self.seeking = NO; self.audioWaitBegan = 0; self.playbackRate = 0;
+    self.loading = NO; self.seeking = NO; self.audioWaitBegan = 0;
     _clock.reset(); [self updateButtons];
 }
 - (void)fail:(NSString *)message {
@@ -303,23 +303,7 @@ id ControllerForView(UIView *view) {
     }
     if (!playing) return;
     self.audio.muted = Numeric(self.content, @"isMuted", 0) != 0;
-    if (self.playbackRate != (float)rate) {
-        self.playbackRate = (float)rate;
-        [self.audio pause];
-        self.seeking = YES; self.seekBegan = now;
-        NSUInteger generation = self.generation;
-        __weak __typeof(self) weakSelf = self;
-        [self.audio seekToTime:CMTimeMakeWithSeconds(time, 600) toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                __typeof(self) self = weakSelf;
-                if (!self || generation != self.generation) return;
-                self.seeking = NO;
-                if (!finished) [self fail:@"Could not synchronize translated audio."];
-                else [self.audio playImmediatelyAtRate:(float)rate];
-            });
-        }];
-        return;
-    }
+    if (self.audio.rate != (float)rate) [self.audio playImmediatelyAtRate:(float)rate];
     if (self.audio.timeControlStatus == AVPlayerTimeControlStatusPlaying) {
         if (self.loading) {
             self.loading = NO; [self updateButtons];
@@ -344,11 +328,39 @@ id ControllerForView(UIView *view) {
 }
 @end
 
+static void YTKACETranslationVolumeHold(UILongPressGestureRecognizer *gesture) {
+    if (gesture.state != UIGestureRecognizerStateBegan) return;
+    UIButton *button = (UIButton *)gesture.view;
+    UIViewController *controller = button.window.rootViewController;
+    while (controller.presentedViewController) controller = controller.presentedViewController;
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:YTKACELocalized(@"Original audio during translation") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSNumber *value in @[@0.0, @0.15, @0.3, @0.5, @1.0]) {
+        NSString *title = [NSString stringWithFormat:@"%ld%%", (long)llround(value.doubleValue * 100)];
+        [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            YTKACESetPreferenceObject(YTKACETranslationOriginalVolumeKey, value);
+        }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:YTKACELocalized(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    menu.popoverPresentationController.sourceView = button;
+    menu.popoverPresentationController.sourceRect = button.bounds;
+    [controller presentViewController:menu animated:YES completion:nil];
+}
+
+@implementation YTKACETranslationCoordinator (VolumeMenu)
+- (void)translationVolumeHold:(UILongPressGestureRecognizer *)gesture {
+    YTKACETranslationVolumeHold(gesture);
+}
+@end
+
 void YTKACEInstallTranslationHooks(void) {
     YTKACERegisterOverlayConfigurator(@"translation", ^(UIView *overlay, UIStackView *stack) {
         YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
         UIButton *button = YTKACEOverlayButton(stack, @"YTKACE Yandex Translation", @"character.bubble", coordinator, @selector(toggle:));
         [coordinator.buttons addObject:button];
+        UILongPressGestureRecognizer *hold = [[UILongPressGestureRecognizer alloc] initWithTarget:nil action:nil];
+        [hold addTarget:coordinator action:@selector(translationVolumeHold:)];
+        hold.minimumPressDuration = 0.55;
+        [button addGestureRecognizer:hold];
         for (NSLayoutConstraint *constraint in button.constraints) {
             if (constraint.firstItem == button && constraint.secondItem == nil &&
                 (constraint.firstAttribute == NSLayoutAttributeWidth || constraint.firstAttribute == NSLayoutAttributeHeight))

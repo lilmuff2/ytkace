@@ -24,9 +24,9 @@ The existing playback-time hook emits notifications even with SponsorBlock off.
 
 The audio clock is checked every 200ms and on playback-time notifications. A drift
 above 350ms triggers a seek. YouTube pause intent stops audio immediately after
-startup, while lack of video clock progress pauses audio within 500ms. A playback
-rate change seeks the translation to the current video time before applying the
-new rate. The enabled notice appears only after AVPlayer reports actual playback.
+startup, while lack of video clock progress pauses audio within 500ms. The
+translation follows YouTube's current playback rate. The enabled notice appears
+only after AVPlayer reports actual playback.
 Source volume is restored while
 waiting, when cancelled, and on every exit path. No audio session category or
 system volume is changed. Speeds outside 0.5x–2x stop translation.

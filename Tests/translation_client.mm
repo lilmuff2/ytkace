@@ -97,6 +97,17 @@ int main(void) { @autoreleasepool {
     }];
     Until(^BOOL { return done; }); assert(requests.count == 2);
 
+    // Polling must include an explicit false firstRequest field (the API rejects omission).
+    done = NO; __block BOOL waiting = NO; __block NSUInteger polls = 0;
+    responseForRequest = ^NSData *(NSURLRequest *request) {
+        if ([request.URL.path isEqual:@"/session/create"]) return SessionReply();
+        NSDictionary *fields = Decode(Body(request));
+        assert(Number(fields,@5,-1) == (polls == 0 ? 1 : 0));
+        return polls++ == 0 ? Reply(2) : Reply(1,audio);
+    };
+    [client translateVideoID:@"jNQXAC9IVRw" duration:19 language:@"en" progress:^(__unused NSInteger n) { waiting = YES; } completion:^(NSURL *url, NSError *error) { assert(url && !error); done = YES; }];
+    Until(^BOOL { return waiting; }); [client poll]; Until(^BOOL { return done; }); assert(polls == 2);
+
     // Waiting and partial content must not accidentally start an incomplete track.
     for (int status : {2,3,5}) {
         __block BOOL progress = NO; done = NO;

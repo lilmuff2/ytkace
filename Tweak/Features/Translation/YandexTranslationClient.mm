@@ -182,6 +182,9 @@ NSURL *AudioURL(NSString *value) {
             if (error) { [self finish:nil error:error]; return; }
             NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
             if (status != 200) {
+#ifdef YTKACE_VOT_DIAGNOSTICS
+                NSLog(@"VOT HTTP %ld %@: %@", (long)status, path, [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
+#endif
                 if ((status == 408 || status == 429 || status == 500 || status == 502 || status == 503 || status == 504) && self.transientFailures++ < 2) {
                     NSString *retryAfter = [(NSHTTPURLResponse *)response valueForHTTPHeaderField:@"Retry-After"];
                     NSTimeInterval delay = MAX(5.0, MIN(60.0, retryAfter.doubleValue));
@@ -251,7 +254,7 @@ NSURL *AudioURL(NSString *value) {
     if (NSProcessInfo.processInfo.systemUptime >= self.sessionExpires) { [self createSession]; return; }
     NSMutableData *body = [NSMutableData data];
     String(body, 3, [@"https://youtu.be/" stringByAppendingString:self.videoID]);
-    if (self.firstRequest) Integer(body, 5, 1);
+    Integer(body, 5, self.firstRequest ? 1 : 0);
     self.firstRequest = NO;
     Varint(body, (6 << 3) | 1);
     double duration = self.duration;
@@ -262,6 +265,9 @@ NSURL *AudioURL(NSString *value) {
     [self post:@"/video-translation/translate" body:body method:@"POST" json:NO signedSession:YES completion:^(NSData *data) {
         NSDictionary *fields = Decode(data);
         NSInteger status = Number(fields, @4, -1);
+#ifdef YTKACE_VOT_DIAGNOSTICS
+        NSLog(@"VOT status %ld, message: %@", (long)status, Text(fields, @9));
+#endif
         NSInteger remaining = Number(fields, @5, 10);
         if (status == 1) {
             NSURL *url = AudioURL(Text(fields, @1));
@@ -275,6 +281,10 @@ NSURL *AudioURL(NSString *value) {
         } else if (status == 6) {
             [self waitAndPoll:remaining];
         } else {
+            NSString *message = Text(fields, @9);
+            if (status == 0 && message.length && message.length <= 300) {
+                [self finish:nil error:Failure(message)]; return;
+            }
             [self finish:nil error:Failure(status == 7 ? @"Yandex requires sign-in for this video."
                 : (status == 0 ? @"Yandex could not translate this video." : @"Invalid response from Yandex."))];
         }

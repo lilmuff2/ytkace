@@ -10,7 +10,7 @@ to cancel or restore the original audio. The button is enabled by default and ca
 be hidden in YTKACE's button settings.
 
 - Regular videos up to four hours; playback at 0.5x–2x while the app is active.
-- Follows pauses, seeking and SponsorBlock skips; lowers the original track to 15%.
+- Follows pauses, seeking and SponsorBlock skips; original-audio volume is configurable.
 - Stops on video changes, ads, backgrounding, PiP, external playback or interruptions.
 - No proxy, account sign-in, downloaded translations, live videos or Shorts support.
 - The video link, duration and source-language hint are sent directly to Yandex

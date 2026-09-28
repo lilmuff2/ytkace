@@ -1475,6 +1475,9 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
             YTKACEToggleDetail(@"Yandex Translation Button",
                 @"Translate to Russian on demand. Sends the video link and source audio to Yandex when needed. Regular videos, 0.5x–2x, foreground only.",
                 YTKACETranslationKey),
+            YTKACEStackedSlider(@"Original audio during translation",
+                                YTKACETranslationOriginalVolumeKey,
+                                0.0, 1.0, 0.05, 0.15, @"volume"),
             YTKACEToggle(@"Sleep Timer Button", YTKACESleepTimerKey, @"", @""),
             YTKACEToggle(@"Background Audio", YTKACEBackgroundPlaybackKey, @"", @"")
         ],

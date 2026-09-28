@@ -69,6 +69,7 @@ id ControllerForView(UIView *view) {
 @property(nonatomic) float savedVolume;
 @property(nonatomic) NSTimeInterval audioWaitBegan;
 @property(nonatomic) NSTimeInterval seekBegan;
+@property(nonatomic) float playbackRate;
 + (instancetype)shared;
 - (void)toggle:(UIButton *)button;
 - (void)updateButtons;
@@ -122,7 +123,7 @@ id ControllerForView(UIView *view) {
     [self.audio pause]; [self.audio.currentItem cancelPendingSeeks]; self.audio = nil;
     [self restoreVolume];
     self.content = nil; self.controller = nil; self.videoID = nil;
-    self.loading = NO; self.seeking = NO; self.audioWaitBegan = 0;
+    self.loading = NO; self.seeking = NO; self.audioWaitBegan = 0; self.playbackRate = 0;
     _clock.reset(); [self updateButtons];
 }
 - (void)fail:(NSString *)message {
@@ -276,8 +277,10 @@ id ControllerForView(UIView *view) {
     if (std::isfinite(audioDuration) && time >= audioDuration - 0.05) {
         [self.audio pause]; [self restoreVolume]; _clock.reset(); return;
     }
-    // Use the advancing video clock: attemptingToPlay is not a playback-state contract.
-    BOOL playing = _clock.shouldPlay(time, now);
+    // Once audio has started, YouTube's intent flag pauses immediately; the clock
+    // still handles startup and buffering without relying on private enum values.
+    BOOL wantsPlayback = Numeric(self.content, @"attemptingToPlay", 1) != 0;
+    BOOL playing = (!self.loading && !wantsPlayback) ? NO : _clock.shouldPlay(time, now);
     double audioTime = CMTimeGetSeconds(self.audio.currentTime);
     if (!playing) { [self.audio pause]; [self restoreVolume]; }
     if (self.seeking) {
@@ -300,7 +303,23 @@ id ControllerForView(UIView *view) {
     }
     if (!playing) return;
     self.audio.muted = Numeric(self.content, @"isMuted", 0) != 0;
-    if (self.audio.rate != (float)rate) [self.audio playImmediatelyAtRate:(float)rate];
+    if (self.playbackRate != (float)rate) {
+        self.playbackRate = (float)rate;
+        [self.audio pause];
+        self.seeking = YES; self.seekBegan = now;
+        NSUInteger generation = self.generation;
+        __weak __typeof(self) weakSelf = self;
+        [self.audio seekToTime:CMTimeMakeWithSeconds(time, 600) toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __typeof(self) self = weakSelf;
+                if (!self || generation != self.generation) return;
+                self.seeking = NO;
+                if (!finished) [self fail:@"Could not synchronize translated audio."];
+                else [self.audio playImmediatelyAtRate:(float)rate];
+            });
+        }];
+        return;
+    }
     if (self.audio.timeControlStatus == AVPlayerTimeControlStatusPlaying) {
         if (self.loading) {
             self.loading = NO; [self updateButtons];
@@ -312,7 +331,10 @@ id ControllerForView(UIView *view) {
             if (!std::isfinite(self.savedVolume) || self.savedVolume < 0 || self.savedVolume > 1) {
                 [self fail:@"Translation is not compatible with this YouTube player."]; return;
             }
-            self.ducked = YES; SetVolume(self.content, self.savedVolume * 0.15f);
+            double originalVolume = [YTKACEPreferenceObject(YTKACETranslationOriginalVolumeKey) doubleValue];
+            if (!std::isfinite(originalVolume)) originalVolume = 0.15;
+            originalVolume = MIN(MAX(originalVolume, 0.0), 1.0);
+            self.ducked = YES; SetVolume(self.content, self.savedVolume * (float)originalVolume);
         }
     } else {
         [self restoreVolume];

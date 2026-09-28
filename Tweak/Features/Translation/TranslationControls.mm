@@ -241,6 +241,7 @@ id ControllerForView(UIView *view) {
         self.audio = [AVPlayer playerWithPlayerItem:item];
         self.audio.volume = 1.0;
         self.audio.allowsExternalPlayback = NO;
+        self.audio.automaticallyWaitsToMinimizeStalling = NO;
         self.audioWaitBegan = NSProcessInfo.processInfo.systemUptime;
         [self tick];
     }];
@@ -302,7 +303,11 @@ id ControllerForView(UIView *view) {
     }
     if (!playing) return;
     self.audio.muted = Numeric(self.content, @"isMuted", 0) != 0;
-    if (self.audio.rate != (float)rate) [self.audio playImmediatelyAtRate:(float)rate];
+    // AVPlayer can enter WaitingToPlayAtSpecifiedRate after the first network
+    // buffer. Re-issue play so a transient CDN stall does not end translation.
+    if (self.audio.rate != (float)rate ||
+        self.audio.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate)
+        [self.audio playImmediatelyAtRate:(float)rate];
     if (self.audio.timeControlStatus == AVPlayerTimeControlStatusPlaying) {
         if (self.loading) {
             self.loading = NO; [self updateButtons];

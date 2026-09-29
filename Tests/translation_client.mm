@@ -216,6 +216,11 @@ int main(void) { @autoreleasepool {
 
     // Synchronization: start, pause, buffering, seek forward/backward, 2x and reset.
     YTKACETranslationClock clock;
+    assert(!YTKACETranslationNeedsSeek(30, 29.5, 3, false, 1));
+    assert(!YTKACETranslationNeedsSeek(30, 20, 3, true, 1)); // Do not interrupt buffering.
+    assert(YTKACETranslationNeedsSeek(30, 20, 3, false, 1)); // Resync after buffering.
+    assert(!YTKACETranslationNeedsSeek(30, 20, 3, false, 0.2));
+    assert(YTKACETranslationNeedsSeek(30, NAN, 3, false, 1));
     assert(!clock.shouldPlay(20,1));
     assert(clock.shouldPlay(20.2,1.2));
     assert(clock.shouldPlay(20.2,1.3)); // Repeated callbacks do not interrupt playback.
@@ -227,5 +232,9 @@ int main(void) { @autoreleasepool {
     assert(!clock.shouldPlay(10,3.4));
     assert(!clock.shouldPlay(NAN,3.6));
     clock.reset(); assert(!clock.shouldPlay(0,4));
+    clock.reset(); assert(!clock.shouldPlay(20.4,4.1)); // Pause clears stale progress.
+    clock.reset(); assert(!clock.shouldPlay(0, 10, 5));
+    assert(clock.shouldPlay(3, 10.6, 5)); // Delayed timer at 5x is not a seek.
+    assert(!clock.shouldPlay(30, 10.8, 5)); // Actual jump still resets progress.
     puts("Translation protocol, cancellation and clock checks passed");
 }}

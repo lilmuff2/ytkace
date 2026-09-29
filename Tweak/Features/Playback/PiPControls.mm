@@ -302,6 +302,7 @@
     } else {
         AVPlayerLayer *activeLayer = [self activePlayerLayer];
         if (activeLayer != nil) {
+            self.playerLayer = activeLayer;
             self.controller = [[AVPictureInPictureController alloc]
                 initWithPlayerLayer:activeLayer];
             self.controller.delegate = self;
@@ -382,6 +383,11 @@
 }
 
 @end
+
+AVPlayer *YTKACEActivePiPPlayer(void) {
+    YTKACEPiPCoordinator *coordinator = YTKACEPiPCoordinator.sharedCoordinator;
+    return coordinator.controller.isPictureInPictureActive ? (coordinator.player ?: coordinator.playerLayer.player) : nil;
+}
 
 void YTKACEInstallPiPHooks(void) {
     YTKACERegisterOverlayConfigurator(@"pip", ^(UIView *overlay, UIStackView *stack) {

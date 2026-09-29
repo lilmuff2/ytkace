@@ -11,7 +11,7 @@ be hidden in YTKACE's button settings.
 
 - Regular videos up to four hours; playback at 0.25x–5x. Background playback requires background audio enabled.
 - Follows pauses, seeking and SponsorBlock skips; original-audio volume is configurable.
-- Stops on video changes, ads, PiP, external playback or interruptions.
+- Follows the active PiP player's clock. Stops on video changes, ads, external playback or interruptions.
 - No proxy, account sign-in, downloaded translations, live videos or Shorts support.
 - The video link, duration and source-language hint are sent directly to Yandex
   only after tapping the button. When requested by Yandex, the selected video's

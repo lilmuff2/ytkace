@@ -23,7 +23,12 @@ players fail with a notice; no private playback-state integer values are assumed
 The existing playback-time hook emits notifications even with SponsorBlock off.
 
 The audio clock is checked every 200ms and on playback-time notifications. A drift
-above 350ms triggers a seek. Lack of video clock progress pauses audio within
+above max(2 seconds, playback rate in seconds) triggers a seek, with an 800ms
+settling period. Audio holds the selected video rate instead of changing pitch
+processing speed every tick. TimeDomain restores the voice algorithm used before
+yandex.10. Automatic buffer waiting is respected using setRate rather than
+playImmediatelyAtRate, and drift seeks are deferred while buffering.
+Lack of video clock progress pauses audio within
 500ms as a buffering fallback; explicit play/pause commands are hooked for immediate
 pause handling. Private playback-intent flags are not used. The
 translation follows YouTube's current playback rate. The enabled notice appears
@@ -37,7 +42,8 @@ immediately while the original is ducked. Muting the original track does not mut
 the translation. Overlay refreshes reuse a single hold recognizer per button.
 
 This build is experimental. Background playback relies on YouTube background audio
-being enabled and iOS keeping the audio session active. PiP, Cast/AirPlay, an ad,
+being enabled and iOS keeping the audio session active. PiP uses the active
+AVPlayer's time, rate and original volume. Cast/AirPlay, an ad,
 another video, or losing headphones stops translation.
 Account-required translations are reported as unsupported. Source language uses
 Yandex detection with an English hint and forceSourceLang=false.
@@ -63,13 +69,14 @@ On a physical iPhone with YouTube 21.38.3:
 
 1. Open a regular English video and tap the speech-bubble button. Confirm Russian
    audio starts at the current position and the original track is quieter.
-2. Pause/resume, seek in both directions, and try 0.5x, 1x and 2x. Enable SponsorBlock
+2. Pause/resume, seek in both directions, and try 0.5x, 1x, 2x, 3x and 5x. Enable SponsorBlock
    and verify translation follows a skipped segment.
 3. Repeat with SponsorBlock and speed controls disabled.
 4. Cancel while preparing, immediately open another video, and request its translation.
    No audio or error from the previous request should appear.
-5. Disconnect the network, enter PiP/background, remove headphones, and turn off
-   the translation setting. Original volume must always return.
+5. Enter PiP, pause/resume there, and return to YouTube. Check synchronization.
+   Disconnect the network, remove headphones, and turn off the translation setting.
+   Original volume must return when translation stops.
 6. Check portrait/fullscreen layout, VoiceOver labels, and hiding the button.
 
 Successful compilation and API requests do not establish on-device synchronization.

@@ -1,6 +1,7 @@
 // Run: bash Scripts/test-translation.sh (macOS with Xcode command line tools).
 #import "../Tweak/Features/Translation/YandexTranslationClient.mm"
 #import "../Tweak/Features/Translation/TranslationSync.h"
+#import "../Tweak/Features/Translation/TranslationStore.mm"
 #include <cassert>
 #include <initializer_list>
 
@@ -8,6 +9,17 @@ static NSMutableArray<NSURLRequest *> *requests;
 static NSData *(^responseForRequest)(NSURLRequest *);
 static NSInteger httpStatus = 200;
 static double responseDelay = 0;
+
+@interface TranslationCacheTask : NSObject
+@property(nonatomic, strong) NSURLResponse *testResponse;
+@property(nonatomic) BOOL wasCancelled;
+- (NSURLResponse *)response;
+- (void)cancel;
+@end
+@implementation TranslationCacheTask
+- (NSURLResponse *)response { return self.testResponse; }
+- (void)cancel { self.wasCancelled = YES; }
+@end
 
 @interface VOTMockProtocol : NSURLProtocol
 @end
@@ -236,5 +248,53 @@ int main(void) { @autoreleasepool {
     clock.reset(); assert(!clock.shouldPlay(0, 10, 5));
     assert(clock.shouldPlay(3, 10.6, 5)); // Delayed timer at 5x is not a seek.
     assert(!clock.shouldPlay(30, 10.8, 5)); // Actual jump still resets progress.
-    puts("Translation protocol, cancellation and clock checks passed");
+    assert([YTKACETranslationLanguage(@[@{@"tags":@"acont=original:lang=ru-RU"}], @[]) isEqual:@"ru"]);
+    assert([YTKACETranslationLanguage(@[@{@"tags":@"acont=original:lang=en"}, @{@"tags":@"acont=dubbed:lang=ru"}], @[]) isEqual:@"en"]);
+    assert([YTKACETranslationLanguage(@[], @[@{@"kind":@"asr", @"language":@"ru"}]) isEqual:@"ru"]);
+    assert(YTKACETranslationLanguage(@[], @[@{@"kind":@"", @"language":@"ru"}]).length == 0);
+    assert(YTKACETranslationLanguage(@[@{@"tags":@"acont=dubbed:lang=ru"}], @[]).length == 0);
+    assert(YTKACETranslationLanguage(@[@{@"tags":@"acont=original:lang=ru"}, @{@"tags":@"acont=original:lang=en"}], @[]).length == 0);
+    assert(!YTKACETranslationShouldStart(@"ru", @YES, YES));
+    assert(!YTKACETranslationShouldStart(@"", nil, YES));
+    assert(!YTKACETranslationShouldStart(@"en", @NO, YES));
+    assert(YTKACETranslationShouldStart(@"en", nil, YES));
+    assert(YTKACETranslationShouldStart(@"", @YES, NO));
+    NSString *suite = [@"translation-test-" stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    NSURL *directory = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:suite]];
+    [NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil];
+    YTKACETranslationStore *store = [[YTKACETranslationStore alloc] initWithDirectory:directory defaults:defaults];
+    [store rememberVideo:@"Nbwv5wHQoj0" values:@{@"enabled":@NO, @"original":@0, @"translated":@0.7}];
+    [store rememberVideo:@"Nbwv5wHQoj0" values:@{@"enabled":@YES}];
+    store = [[YTKACETranslationStore alloc] initWithDirectory:directory defaults:defaults];
+    assert([[store choiceForVideo:@"Nbwv5wHQoj0"][@"enabled"] boolValue]);
+    assert([[store choiceForVideo:@"Nbwv5wHQoj0"][@"original"] doubleValue] == 0);
+    assert([[store choiceForVideo:@"Nbwv5wHQoj0"][@"translated"] doubleValue] == 0.7);
+    NSURL *file = [directory URLByAppendingPathComponent:@"Nbwv5wHQoj0-ru.mp3"];
+    [[@"audio" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:file atomically:YES];
+    assert([store cachedAudioForVideo:@"Nbwv5wHQoj0"] != nil);
+    assert([store cachedAudioForVideo:@"../outside/"] == nil);
+    [NSFileManager.defaultManager setAttributes:@{NSFileModificationDate:[NSDate dateWithTimeIntervalSinceNow:-15 * 86400]} ofItemAtPath:file.path error:nil];
+    assert([store cachedAudioForVideo:@"Nbwv5wHQoj0"] == nil);
+    [NSData.data writeToURL:file atomically:YES];
+    assert([store cachedAudioForVideo:@"Nbwv5wHQoj0"] == nil);
+    NSURL *download = [directory URLByAppendingPathComponent:@"download.tmp"];
+    [[@"audio" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:download atomically:YES];
+    TranslationCacheTask *cacheTask = [TranslationCacheTask new];
+    cacheTask.testResponse = [[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://test.yandex.net/audio"] statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":@"text/html"}];
+    store.task = (id)cacheTask; store.downloadingVideo = @"Nbwv5wHQoj0";
+    [store URLSession:NSURLSession.sharedSession downloadTask:(id)cacheTask didFinishDownloadingToURL:download];
+    assert([store cachedAudioForVideo:@"Nbwv5wHQoj0"] == nil); // HTML cannot poison the cache.
+    cacheTask.testResponse = [[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://test.yandex.net/audio"] statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":@"audio/mpeg"}];
+    [store URLSession:NSURLSession.sharedSession downloadTask:(id)cacheTask didFinishDownloadingToURL:download];
+    assert([store cachedAudioForVideo:@"Nbwv5wHQoj0"] != nil);
+    [store URLSession:NSURLSession.sharedSession downloadTask:(id)cacheTask didWriteData:1 totalBytesWritten:1 totalBytesExpectedToWrite:FileLimit + 1];
+    assert(cacheTask.wasCancelled);
+    [store cancelDownload];
+    assert(store.task == nil);
+    for (NSUInteger i=0; i<205; i++) [store rememberVideo:[NSString stringWithFormat:@"%011lu", (unsigned long)i] values:@{@"enabled":@YES}];
+    assert([defaults dictionaryForKey:@"YTKACE.Translation.VideoChoices"].count == 200);
+    [defaults removePersistentDomainForName:suite];
+    [NSFileManager.defaultManager removeItemAtURL:directory error:nil];
+    puts("Translation protocol, synchronization, language, preferences and cache checks passed");
 }}

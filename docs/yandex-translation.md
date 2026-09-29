@@ -37,9 +37,25 @@ Source volume stays at the chosen level during pauses, seeks and buffering after
 translation has started, and is restored on stop/error/end. No audio session
 category or system volume is changed. Supported speeds are 0.25x–5x.
 
-Holding the translation button opens original-track volume choices. Changes apply
+Holding the translation button opens two native volume sliders and the optional
+automatic-translation toggle (off by default). Changes apply
 immediately while the original is ducked. Muting the original track does not mute
 the translation. Overlay refreshes reuse a single hold recognizer per button.
+
+The last 200 video choices retain explicit on/off and both volume levels. Explicit
+off overrides automatic translation. Russian source language always prevents auto
+start and hides the button. Source language uses original audio xtags, falling back
+to automatic captions; translated captions and dubbed audio do not establish the
+source language. Unknown language leaves the button visible and only a remembered
+manual enable can start automatically. Metadata checks are bounded to eight attempts.
+
+TranslationStore downloads a low-priority cache copy only after playback starts and
+AVPlayer reports it is likely to keep up. It never swaps out the running player.
+Completed audio is reused on later visits, expires after 14 days, and is bounded
+to 256 MiB per file / 512 MiB total. Leaving translation cancels unfinished caching.
+Redirects, non-audio responses and partial downloads are not saved. Failed cached
+playback removes that file so the next request fetches a fresh translation.
+Preparation notices distinguish source download, upload, service wait and audio load.
 
 This build is experimental. Background playback relies on YouTube background audio
 being enabled and iOS keeping the audio session active. PiP uses the active

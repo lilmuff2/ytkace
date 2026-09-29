@@ -228,6 +228,7 @@ static NSString *YTKACETrimmedNumber(double value) {
 
 static NSString *YTKACESliderValueText(NSDictionary *item, double value) {
     NSString *unit = item[@"unit"];
+    if ([unit isEqualToString:@"volume"]) return [NSString stringWithFormat:@"%.0f%%", value * 100];
     if ([unit isEqualToString:@"percent"]) {
         return [NSString stringWithFormat:@"%.0f%%", value];
     }
@@ -622,6 +623,7 @@ NSString *YTKACEPickerSummary(NSString *key,
         return 92.0;
     }
     if ([type isEqualToString:@"slider"]) {
+        if ([item[@"unit"] isEqualToString:@"volume"]) return UITableViewAutomaticDimension;
         return [item[@"stacked"] boolValue] ? 78.0 : 58.0;
     }
     if ([type isEqualToString:@"segmented"] && [item[@"stacked"] boolValue]) {
@@ -764,12 +766,15 @@ willDisplayHeaderView:(UIView *)view
         cell.accessoryView = stepper;
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else if ([type isEqualToString:@"slider"] && [item[@"stacked"] boolValue]) {
-        double stored = [YTKACEPreferenceObject(item[@"key"]) doubleValue];
-        double value = stored > 0.0 ? stored : [item[@"fallback"] doubleValue];
+        id stored = YTKACEPreferenceObject(item[@"key"]);
+        double value = stored ? [stored doubleValue] : [item[@"fallback"] doubleValue];
+        BOOL volumeSlider = [item[@"unit"] isEqualToString:@"volume"];
 
         UILabel *caption = [UILabel new];
         caption.text = item[@"title"];
-        caption.font = [UIFont systemFontOfSize:16.0];
+        caption.font = volumeSlider ? [UIFont preferredFontForTextStyle:UIFontTextStyleBody] : [UIFont systemFontOfSize:16.0];
+        caption.adjustsFontForContentSizeCategory = volumeSlider;
+        caption.numberOfLines = volumeSlider ? 0 : 1;
         caption.textColor = UIColor.labelColor;
 
         UILabel *readout = [UILabel new];
@@ -786,6 +791,9 @@ willDisplayHeaderView:(UIView *)view
         slider.minimumValue = [item[@"minimum"] floatValue];
         slider.maximumValue = [item[@"maximum"] floatValue];
         slider.value = (float)value;
+        slider.accessibilityLabel = item[@"title"];
+        slider.accessibilityValue = YTKACESliderValueText(item, value);
+        if (volumeSlider) [slider.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
         objc_setAssociatedObject(slider, YTKACEItemAssociation, item,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(slider, YTKACEValueLabelAssociation, readout,
@@ -940,6 +948,7 @@ willDisplayHeaderView:(UIView *)view
     double value = round(round(sender.value / step) * step * 100.0) / 100.0;
     YTKACESetPreferenceObject(item[@"key"], @(value));
     label.text = YTKACESliderValueText(item, value);
+    sender.accessibilityValue = label.text;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -1478,6 +1487,11 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
             YTKACEStackedSlider(@"Original audio during translation",
                                 YTKACETranslationOriginalVolumeKey,
                                 0.0, 1.0, 0.05, 0.15, @"volume"),
+            YTKACEStackedSlider(@"Translated audio volume", YTKACETranslationVolumeKey,
+                                0.0, 1.0, 0.05, 1.0, @"volume"),
+            YTKACEToggleDetail(@"Automatically translate foreign videos",
+                @"Uses the original audio language. Unknown languages stay manual. Sends audio to Yandex when needed.",
+                YTKACETranslationAutoKey),
             YTKACEToggle(@"Sleep Timer Button", YTKACESleepTimerKey, @"", @""),
             YTKACEToggle(@"Background Audio", YTKACEBackgroundPlaybackKey, @"", @"")
         ],
@@ -1808,6 +1822,16 @@ UIViewController *YTKACEMakeSponsorBlockController(void) {
 
 UIViewController *YTKACEMakePlayerControlsController(void) {
     return YTKACEPageFromDefinition(YTKACEPlayerControlsDefinition());
+}
+
+UIViewController *YTKACEMakeTranslationOptionsController(void) {
+    return [[YTKACEOptionsController alloc] initWithTitle:YTKACELocalized(@"Translation audio")
+        sections:@[@[
+            YTKACEStackedSlider(@"Original audio during translation", YTKACETranslationOriginalVolumeKey, 0, 1, 0.01, 0.15, @"volume"),
+            YTKACEStackedSlider(@"Translated audio volume", YTKACETranslationVolumeKey, 0, 1, 0.01, 1, @"volume"),
+            YTKACEToggleDetail(@"Automatically translate foreign videos",
+                @"Uses the original audio language. Unknown languages stay manual. Sends audio to Yandex when needed.", YTKACETranslationAutoKey)
+        ]] sectionTitles:@[YTKACELocalized(@"Volumes are remembered for this video.")]];
 }
 
 UIViewController *YTKACEMakeOverlayOptionsController(void) {

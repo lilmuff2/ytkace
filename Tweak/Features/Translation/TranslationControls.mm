@@ -1,5 +1,7 @@
 #import "YandexTranslationClient.h"
 #import "TranslationSync.h"
+#import "TranslationStore.h"
+#import "../../Settings/YTKACESettingsPages.h"
 #import "../Downloads/StreamResolver.h"
 #import "../Downloads/SABRDownloader.h"
 #import "../../YTKACE.h"
@@ -50,6 +52,24 @@ id ControllerForView(UIView *view) {
         if (cls && [responder isKindOfClass:cls]) return responder;
     return nil;
 }
+NSString *SourceLanguage(id controller) {
+    id response = Object(controller, @"contentPlayerResponse");
+    NSMutableArray *tracks = [NSMutableArray array], *captions = [NSMutableArray array];
+    for (YTKACEStreamOption *option in [YTKACEStreamResolver optionsFromPlayerResponse:response]) {
+        if (option.isAudioOnly) [tracks addObject:@{@"id":option.audioTrackID ?: @"", @"tags":option.xtags ?: @""}];
+    }
+    id list = Object(Object(response, @"captions"), @"playerCaptionsTracklistRenderer");
+    id captionTracks = Object(list, @"captionTracksArray");
+    if ([captionTracks isKindOfClass:NSArray.class]) for (id caption in captionTracks) {
+        [captions addObject:@{@"kind":Object(caption, @"kind") ?: @"", @"language":Object(caption, @"languageCode") ?: @""}];
+    }
+    return YTKACETranslationLanguage(tracks, captions);
+}
+float TranslationVolume(NSString *key, float fallback) {
+    id stored = YTKACEPreferenceObject(key);
+    double value = stored ? [stored doubleValue] : fallback;
+    return std::isfinite(value) ? (float)MIN(MAX(value, 0.0), 1.0) : fallback;
+}
 }
 
 @interface YTKACETranslationCoordinator : NSObject {
@@ -75,12 +95,27 @@ id ControllerForView(UIView *view) {
 @property(nonatomic) NSTimeInterval lastSeekCompleted;
 @property(nonatomic, strong) AVPlayer *pipSource;
 @property(nonatomic) float pipSavedVolume;
+@property(nonatomic, strong) YTKACETranslationStore *store;
+@property(nonatomic, weak) id watchedController;
+@property(nonatomic, copy) NSString *languageVideoID;
+@property(nonatomic, copy) NSString *sourceLanguage;
+@property(nonatomic, copy) NSString *autoAttemptedVideo;
+@property(nonatomic, copy) NSString *preparationStatus;
+@property(nonatomic) NSTimeInterval metadataCheckedAt;
+@property(nonatomic, copy) NSURL *remoteAudioURL;
+@property(nonatomic) BOOL cacheStarted;
+@property(nonatomic) NSUInteger metadataAttempts;
+@property(nonatomic, weak) UIViewController *volumeController;
 + (instancetype)shared;
 - (void)toggle:(UIButton *)button;
 - (void)updateButtons;
 - (void)stop;
 - (void)tick;
 - (void)playbackPaused:(BOOL)paused;
+- (void)observeVideo:(id)controller;
+- (void)startController:(id)controller;
+- (void)prepareAudio:(NSURL *)url;
+- (void)setPreparationStatus:(NSString *)status;
 - (void)translationVolumeHold:(UILongPressGestureRecognizer *)gesture;
 @end
 
@@ -95,6 +130,8 @@ id ControllerForView(UIView *view) {
     if ((self = [super init])) {
         _buttons = NSHashTable.weakObjectsHashTable;
         _client = [YTKACEYandexTranslationClient new];
+        NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
+        _store = [[YTKACETranslationStore alloc] initWithDirectory:[caches URLByAppendingPathComponent:@"YTKACE-Translations"] defaults:NSUserDefaults.standardUserDefaults];
         __weak __typeof(self) weakSelf = self;
         _client.audioProvider = ^(void (^completion)(NSData *, NSInteger, NSError *)) {
             [weakSelf downloadSourceAudio:completion];
@@ -110,12 +147,51 @@ id ControllerForView(UIView *view) {
 }
 - (void)updateButtons {
     for (UIButton *button in self.buttons) {
-        button.hidden = !YTKACEFeatureEnabled(YTKACETranslationKey);
+        BOOL russian = [self.sourceLanguage isEqualToString:@"ru"] && [self.languageVideoID isEqualToString:VideoID(ControllerForView(button))];
+        button.hidden = !YTKACEFeatureEnabled(YTKACETranslationKey) || russian;
         button.tintColor = self.videoID ? UIColor.systemYellowColor : UIColor.whiteColor;
         NSString *state = !self.videoID ? @"Translate to Russian" : (self.loading ? @"Preparing translation. Tap to cancel." : @"Russian translation is on. Tap to turn off.");
         button.accessibilityLabel = YTKACELocalized(state);
-        button.accessibilityValue = self.videoID ? YTKACELocalized(self.loading ? @"Preparing translation…" : @"On") : YTKACELocalized(@"Off");
+        button.accessibilityValue = self.videoID ? (self.loading ? (self.preparationStatus ?: YTKACELocalized(@"Preparing translation…")) : YTKACELocalized(@"On")) : YTKACELocalized(@"Off");
         [button setImage:[UIImage systemImageNamed:self.loading ? @"hourglass" : @"character.bubble"] forState:UIControlStateNormal];
+    }
+}
+- (void)setPreparationStatus:(NSString *)status {
+    if ([_preparationStatus isEqualToString:status]) return;
+    _preparationStatus = [status copy];
+    [self updateButtons];
+    if (status.length) YTKACEShowNotice(status);
+}
+- (void)observeVideo:(id)controller {
+    if (!controller) return;
+    self.watchedController = controller;
+    NSString *videoID = VideoID(controller);
+    if (!videoID.length) return;
+    double now = NSProcessInfo.processInfo.systemUptime;
+    if (![videoID isEqualToString:self.languageVideoID]) {
+        self.languageVideoID = videoID; self.sourceLanguage = @"";
+        self.autoAttemptedVideo = nil; self.metadataCheckedAt = 0;
+        self.metadataAttempts = 0;
+    }
+    if (!self.sourceLanguage.length && self.metadataAttempts < 8 && now - self.metadataCheckedAt > 2) {
+        self.metadataAttempts++;
+        self.metadataCheckedAt = now;
+        self.sourceLanguage = SourceLanguage(controller);
+        [self updateButtons];
+    }
+    if ([self.sourceLanguage isEqualToString:@"ru"]) {
+        if ([self.videoID isEqualToString:videoID]) [self stop];
+        return;
+    }
+    if (self.videoID || [self.autoAttemptedVideo isEqualToString:videoID] ||
+        !YTKACEFeatureEnabled(YTKACETranslationKey) || [self unsupported:controller]) return;
+    double duration = Numeric(controller, @"currentVideoTotalMediaTime");
+    if (!std::isfinite(duration) || duration <= 0 || !CanSetVolume(Object(controller, @"activeVideo"))) return;
+    id enabled = [self.store choiceForVideo:videoID][@"enabled"];
+    if (YTKACETranslationShouldStart(self.sourceLanguage, [enabled isKindOfClass:NSNumber.class] ? enabled : nil,
+        YTKACEFeatureEnabled(YTKACETranslationAutoKey))) {
+        self.autoAttemptedVideo = videoID;
+        [self startController:controller];
     }
 }
 - (void)restoreVolume {
@@ -126,11 +202,13 @@ id ControllerForView(UIView *view) {
     self.generation++;
     [self.sourceTask cancel]; self.sourceTask = nil;
     [self.client cancel];
+    [self.store cancelDownload]; self.remoteAudioURL = nil; self.cacheStarted = NO;
     [self.timer invalidate]; self.timer = nil;
     [self.audio pause]; [self.audio.currentItem cancelPendingSeeks]; self.audio = nil;
     [self restoreVolume];
     self.content = nil; self.controller = nil; self.videoID = nil;
     self.loading = NO; self.seeking = NO; self.audioWaitBegan = 0;
+    _preparationStatus = nil;
     self.pausedByYouTube = NO;
     self.resumeGraceUntil = 0; self.lastSeekCompleted = 0;
     _clock.reset(); [self updateButtons];
@@ -149,7 +227,7 @@ id ControllerForView(UIView *view) {
             NSLocalizedDescriptionKey: YTKACELocalized(@"Could not load source audio for translation.")}]);
         return;
     }
-    YTKACEShowNotice(YTKACELocalized(@"Downloading audio for Yandex translation…"));
+    self.preparationStatus = YTKACELocalized(@"Downloading audio for Yandex translation…");
     NSUInteger generation = self.generation;
     __weak __typeof(self) weakSelf = self;
     self.sourceTask = [YTKACESABRDownloader downloadPlayerResponse:response videoOption:option
@@ -172,6 +250,7 @@ id ControllerForView(UIView *view) {
                 [NSFileManager.defaultManager removeItemAtURL:scratch error:nil];
             if (!self || generation != self.generation) return;
             self.sourceTask = nil;
+            self.preparationStatus = YTKACELocalized(@"Uploading audio to Yandex…");
             completion(data, option.itag, error);
         }];
 }
@@ -187,23 +266,33 @@ id ControllerForView(UIView *view) {
 - (void)preferencesChanged:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!YTKACEFeatureEnabled(YTKACETranslationKey)) [self stop];
+        self.audio.volume = TranslationVolume(YTKACETranslationVolumeKey, 1);
+        NSString *key = notification.userInfo[@"key"];
+        if ([key isEqualToString:YTKACETranslationOriginalVolumeKey] || [key isEqualToString:YTKACETranslationVolumeKey]) {
+            NSString *video = self.videoID ?: VideoID(self.watchedController);
+            [self.store rememberVideo:video values:@{@"original":@(TranslationVolume(YTKACETranslationOriginalVolumeKey, 0.15)), @"translated":@(TranslationVolume(YTKACETranslationVolumeKey, 1))}];
+        }
         if (self.ducked) {
             double value = [YTKACEPreferenceObject(YTKACETranslationOriginalVolumeKey) doubleValue];
             if (!std::isfinite(value)) value = 0.15;
             SetVolume(self.content, self.savedVolume * (float)MIN(MAX(value, 0.0), 1.0));
         }
         [self updateButtons];
+        if ([key isEqualToString:YTKACETranslationAutoKey]) [self observeVideo:self.watchedController];
     });
 }
 - (void)videoActivated:(NSNotification *)notification {
     // Always cancel on activation, even if a replay uses the same video ID.
     dispatch_block_t block = ^{
         if (self.videoID && notification.object == self.controller) [self stop];
+        self.languageVideoID = nil;
+        [self observeVideo:notification.object];
     };
     if (NSThread.isMainThread) block(); else dispatch_async(dispatch_get_main_queue(), block);
 }
 - (void)timeChanged:(NSNotification *)notification {
     if (!NSThread.isMainThread) return; // The active timer also reads the real content clock.
+    [self observeVideo:notification.object];
     if (self.videoID && self.controller == notification.object) [self tick];
 }
 - (BOOL)unsupported:(id)controller {
@@ -214,10 +303,23 @@ id ControllerForView(UIView *view) {
         Numeric(controller, @"currentVideoIsLocal", 0);
 }
 - (void)toggle:(UIButton *)button {
-    if (self.videoID) { [self stop]; YTKACEShowNotice(YTKACELocalized(@"Translation off")); return; }
+    if (self.videoID) {
+        [self.store rememberVideo:self.videoID values:@{@"enabled":@NO}];
+        self.autoAttemptedVideo = self.videoID;
+        [self stop]; YTKACEShowNotice(YTKACELocalized(@"Translation off")); return;
+    }
     id controller = ControllerForView(button);
+    [self startController:controller];
+    if (self.videoID) {
+        self.autoAttemptedVideo = self.videoID;
+        [self.store rememberVideo:self.videoID values:@{@"enabled":@YES}];
+    }
+}
+- (void)startController:(id)controller {
+    if (self.videoID) return;
     id content = Object(controller, @"activeVideo");
     NSString *videoID = VideoID(controller);
+    if ([SourceLanguage(controller) isEqualToString:@"ru"]) return;
     double duration = Numeric(controller, @"currentVideoTotalMediaTime");
     id response = Object(controller, @"contentPlayerResponse");
     id details = Object(response, @"videoDetails");
@@ -231,17 +333,24 @@ id ControllerForView(UIView *view) {
         YTKACEShowNotice(YTKACELocalized(@"Translation is not compatible with this YouTube player.")); return;
     }
     self.controller = controller; self.content = content; self.videoID = videoID;
+    self.watchedController = controller;
+    NSDictionary *choice = [self.store choiceForVideo:videoID];
+    if ([choice[@"original"] isKindOfClass:NSNumber.class]) YTKACESetPreferenceObject(YTKACETranslationOriginalVolumeKey, choice[@"original"]);
+    if ([choice[@"translated"] isKindOfClass:NSNumber.class]) YTKACESetPreferenceObject(YTKACETranslationVolumeKey, choice[@"translated"]);
     self.loading = YES;
     NSUInteger generation = ++self.generation;
     [self updateButtons];
-    YTKACEShowNotice(YTKACELocalized(@"Preparing translation…"));
+    self.preparationStatus = YTKACELocalized(@"Preparing translation…");
     self.timer = [NSTimer timerWithTimeInterval:0.2 target:self selector:@selector(tick) userInfo:nil repeats:YES];
     [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
+    NSURL *cached = [self.store cachedAudioForVideo:videoID];
+    if (cached) { [self prepareAudio:cached]; return; }
     __weak __typeof(self) weakSelf = self;
     // Leave source-language detection to Yandex (forceSourceLang is false).
     [self.client translateVideoID:videoID duration:duration language:@"en" progress:^(NSInteger seconds) {
         __typeof(self) self = weakSelf;
         if (!self || generation != self.generation) return;
+        self.preparationStatus = YTKACELocalized(@"Waiting for Yandex translation…");
         for (UIButton *item in self.buttons)
             item.accessibilityValue = seconds > 0 ? [NSString stringWithFormat:YTKACELocalized(@"Preparing translation: about %ld seconds"), (long)seconds] : YTKACELocalized(@"Preparing translation…");
     } completion:^(NSURL *url, NSError *error) {
@@ -250,14 +359,19 @@ id ControllerForView(UIView *view) {
         if (error) { [self fail:error.localizedDescription]; return; }
         [self.sourceTask cancel]; self.sourceTask = nil;
         if (![videoID isEqualToString:VideoID(self.controller)]) { [self stop]; return; }
+        [self prepareAudio:url];
+    }];
+}
+- (void)prepareAudio:(NSURL *)url {
+        self.remoteAudioURL = url.isFileURL ? nil : url;
+        self.preparationStatus = YTKACELocalized(url.isFileURL ? @"Loading saved translation…" : @"Loading translated audio…");
         AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
         item.audioTimePitchAlgorithm = AVAudioTimePitchAlgorithmTimeDomain;
         self.audio = [AVPlayer playerWithPlayerItem:item];
-        self.audio.volume = 1.0;
+        self.audio.volume = TranslationVolume(YTKACETranslationVolumeKey, 1);
         self.audio.allowsExternalPlayback = NO;
         self.audioWaitBegan = NSProcessInfo.processInfo.systemUptime;
         [self tick];
-    }];
 }
 - (void)tick {
     if (!self.videoID) return;
@@ -272,6 +386,7 @@ id ControllerForView(UIView *view) {
     double now = NSProcessInfo.processInfo.systemUptime;
     AVPlayerItem *item = self.audio.currentItem;
     if (item.status == AVPlayerItemStatusFailed || self.audio.status == AVPlayerStatusFailed) {
+        [self.store removeAudioForVideo:self.videoID];
         [self fail:@"Could not play the translated audio. Try again."]; return;
     }
     if (item.status != AVPlayerItemStatusReadyToPlay) {
@@ -343,6 +458,9 @@ id ControllerForView(UIView *view) {
     // Respect AVPlayer's buffer waiting; playImmediatelyAtRate bypasses it.
     if (fabs(self.audio.rate - rate) > 0.01) self.audio.rate = (float)rate;
     if (self.audio.timeControlStatus == AVPlayerTimeControlStatusPlaying) {
+        if (!self.cacheStarted && self.remoteAudioURL && item.isPlaybackLikelyToKeepUp) {
+            self.cacheStarted = YES; [self.store cacheAudio:self.remoteAudioURL video:self.videoID];
+        }
         if (self.loading) {
             self.loading = NO; [self updateButtons];
             YTKACEShowNotice(YTKACELocalized(@"Russian translation is on. Tap to turn off."));
@@ -378,20 +496,25 @@ static void YTKACETranslationVolumeHold(UILongPressGestureRecognizer *gesture) {
     UIButton *button = (UIButton *)gesture.view;
     UIViewController *controller = button.window.rootViewController;
     while (controller.presentedViewController) controller = controller.presentedViewController;
-    UIAlertController *menu = [UIAlertController alertControllerWithTitle:YTKACELocalized(@"Original audio during translation") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSNumber *value in @[@0.0, @0.15, @0.3, @0.5, @1.0]) {
-        NSString *title = [NSString stringWithFormat:@"%ld%%", (long)llround(value.doubleValue * 100)];
-        [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-            YTKACESetPreferenceObject(YTKACETranslationOriginalVolumeKey, value);
-        }]];
+    YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
+    coordinator.watchedController = ControllerForView(button);
+    if (!coordinator.videoID) {
+        NSDictionary *choice = [coordinator.store choiceForVideo:VideoID(coordinator.watchedController)];
+        if ([choice[@"original"] isKindOfClass:NSNumber.class]) YTKACESetPreferenceObject(YTKACETranslationOriginalVolumeKey, choice[@"original"]);
+        if ([choice[@"translated"] isKindOfClass:NSNumber.class]) YTKACESetPreferenceObject(YTKACETranslationVolumeKey, choice[@"translated"]);
     }
-    [menu addAction:[UIAlertAction actionWithTitle:YTKACELocalized(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
-    menu.popoverPresentationController.sourceView = button;
-    menu.popoverPresentationController.sourceRect = button.bounds;
-    [controller presentViewController:menu animated:YES completion:nil];
+    UIViewController *options = YTKACEMakeTranslationOptionsController();
+    options.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:coordinator action:@selector(closeTranslationOptions)];
+    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:options];
+    navigation.modalPresentationStyle = UIModalPresentationPageSheet;
+    navigation.sheetPresentationController.detents = @[UISheetPresentationControllerDetent.mediumDetent, UISheetPresentationControllerDetent.largeDetent];
+    navigation.sheetPresentationController.prefersGrabberVisible = YES;
+    coordinator.volumeController = navigation;
+    [controller presentViewController:navigation animated:YES completion:nil];
 }
 
 @implementation YTKACETranslationCoordinator (VolumeMenu)
+- (void)closeTranslationOptions { [self.volumeController dismissViewControllerAnimated:YES completion:nil]; }
 - (void)translationVolumeHold:(UILongPressGestureRecognizer *)gesture {
     YTKACETranslationVolumeHold(gesture);
 }
@@ -440,5 +563,6 @@ void YTKACEInstallTranslationHooks(void) {
                 constraint.constant = 44;
         }
         [coordinator updateButtons];
+        dispatch_async(dispatch_get_main_queue(), ^{ [coordinator observeVideo:ControllerForView(button)]; });
     });
 }

@@ -12,7 +12,10 @@ be hidden in YTKACE's button settings.
 - Regular videos up to four hours; playback at 0.25x–5x. Background playback requires background audio enabled.
 - Follows pauses, seeking and SponsorBlock skips; original-audio volume is configurable.
 - Follows the active PiP player's clock. Stops on video changes, ads, external playback or interruptions.
-- No proxy, account sign-in, downloaded translations, live videos or Shorts support.
+- Hold the translation button for original/translated volume sliders. Choices are remembered for the last 200 videos.
+- Completed voice-overs are cached locally (512 MiB total, 14-day expiry). The first playback still streams normally.
+- Optional automatic translation is off by default. Known Russian originals hide the button; unknown languages keep manual access.
+- No proxy, account sign-in, live videos or Shorts support.
 - The video link, duration and source-language hint are sent directly to Yandex
   only after tapping the button. When requested by Yandex, the selected video's
   source audio is downloaded and uploaded in chunks. The unofficial service may

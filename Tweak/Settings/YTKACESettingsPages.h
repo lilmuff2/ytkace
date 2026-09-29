@@ -3,6 +3,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 FOUNDATION_EXPORT UIViewController *YTKACEMakePlayerControlsController(void);
+FOUNDATION_EXPORT UIViewController *YTKACEMakeTranslationOptionsController(void);
 FOUNDATION_EXPORT UIViewController *YTKACEMakeSponsorBlockController(void);
 FOUNDATION_EXPORT UIViewController *YTKACEMakeTabBarOptionsController(void);
 FOUNDATION_EXPORT UIViewController *YTKACEMakeOverlayOptionsController(void);

@@ -48,6 +48,7 @@ YTKACE_FILES = \
 	Tweak/Features/Playback/LoopControls.mm \
 	Tweak/Features/Translation/YandexTranslationClient.mm \
 	Tweak/Features/Translation/TranslationControls.mm \
+	Tweak/Features/Translation/TranslationStore.mm \
 	Tweak/Features/Playback/AutoplayControls.mm \
 	Tweak/Features/Playback/CaptionControls.mm \
 	Tweak/Features/Playback/TranscriptExport.mm \

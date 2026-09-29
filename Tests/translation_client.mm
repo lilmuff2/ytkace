@@ -249,6 +249,13 @@ int main(void) { @autoreleasepool {
     assert(clock.shouldPlay(3, 10.6, 5)); // Delayed timer at 5x is not a seek.
     assert(!clock.shouldPlay(30, 10.8, 5)); // Actual jump still resets progress.
     assert([YTKACETranslationLanguage(@[@{@"tags":@"acont=original:lang=ru-RU"}], @[]) isEqual:@"ru"]);
+    assert([YTKACETranslationTrackLanguage(@"ru.4", nil, nil) isEqual:@"ru"]); // Selected Russian dub, no original flag.
+    assert([YTKACETranslationTrackLanguage(@"en.0", @"lang=ru", @"Russian") isEqual:@"en"]); // Actual ID wins.
+    assert([YTKACETranslationTrackLanguage(nil, @"acont%3Ddubbed%3Alang%3Dru", nil) isEqual:@"ru"]);
+    assert([YTKACETranslationTrackLanguage(nil, nil, @"Русский (автоматический перевод)") isEqual:@"ru"]);
+    assert([YTKACETranslationTrackLanguage(@"und", nil, @"Russian (original)") isEqual:@"ru"]);
+    assert(YTKACETranslationTrackLanguage(nil, nil, @"Russian lessons in English").length == 0);
+    assert(YTKACETranslationTrackLanguage(@42, NSNull.null, NSNull.null).length == 0);
     assert([YTKACETranslationLanguage(@[@{@"tags":@"acont=original:lang=en"}, @{@"tags":@"acont=dubbed:lang=ru"}], @[]) isEqual:@"en"]);
     assert([YTKACETranslationLanguage(@[], @[@{@"kind":@"asr", @"language":@"ru"}]) isEqual:@"ru"]);
     assert(YTKACETranslationLanguage(@[], @[@{@"kind":@"", @"language":@"ru"}]).length == 0);

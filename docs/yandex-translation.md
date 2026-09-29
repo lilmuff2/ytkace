@@ -43,11 +43,14 @@ immediately while the original is ducked. Muting the original track does not mut
 the translation. Overlay refreshes reuse a single hold recognizer per button.
 
 The last 200 video choices retain explicit on/off and both volume levels. Explicit
-off overrides automatic translation. Russian source language always prevents auto
-start and hides the button. Source language uses original audio xtags, falling back
-to automatic captions; translated captions and dubbed audio do not establish the
-source language. Unknown language leaves the button visible and only a remembered
-manual enable can start automatically. Metadata checks are bounded to eight attempts.
+off overrides automatic translation. The selected audio format's track ID, tags
+and track name are checked first, followed by the overlay's selected audio track.
+Russian playback prevents auto start, hides the button and stops active Yandex
+translation. YouTube retains control of audio track selection. When the selected
+track has no language metadata, original audio xtags and automatic captions provide
+a fallback. Unknown language leaves the button visible and only a remembered manual
+enable can start automatically. Metadata is refreshed once per second of playback
+and on audioTrackDidChange:source:, including after the initial startup window.
 
 TranslationStore downloads a low-priority cache copy only after playback starts and
 AVPlayer reports it is likely to keep up. It never swaps out the running player.

@@ -17,8 +17,9 @@ extern AVPlayer *YTKACEActivePiPPlayer(void);
 namespace {
 id Object(id target, NSString *name) {
     SEL selector = NSSelectorFromString(name);
+    if (![target respondsToSelector:selector]) return nil;
     NSMethodSignature *signature = [target methodSignatureForSelector:selector];
-    if (![target respondsToSelector:selector] || signature.numberOfArguments != 2 || signature.methodReturnType[0] != '@') return nil;
+    if (signature.numberOfArguments != 2 || signature.methodReturnType[0] != '@') return nil;
     return ((id (*)(id, SEL))objc_msgSend)(target, selector);
 }
 double Numeric(id target, NSString *name, double fallback = NAN) {
@@ -53,7 +54,18 @@ id ControllerForView(UIView *view) {
     return nil;
 }
 NSString *SourceLanguage(id controller) {
+    id format = Object(Object(controller, @"activeVideo"), @"selectedAudioFormat");
+    id track = Object(format, @"audioTrack");
+    id identifier = Object(format, @"audioTrackID");
+    if (![identifier isKindOfClass:NSString.class] || ![identifier length]) identifier = Object(track, @"id_p");
+    NSString *selected = YTKACETranslationTrackLanguage(identifier,
+        Object(format, @"xtags"), Object(track, @"displayName"));
+    if (selected.length) return selected;
+    track = Object(Object(controller, @"activeVideoPlayerOverlay"), @"selectedAudioTrack");
+    selected = YTKACETranslationTrackLanguage(Object(track, @"id_p"), nil, Object(track, @"displayName"));
+    if (selected.length) return selected;
     id response = Object(controller, @"contentPlayerResponse");
+    if (!Object(response, @"captions")) response = Object(response, @"playerData") ?: response;
     NSMutableArray *tracks = [NSMutableArray array], *captions = [NSMutableArray array];
     for (YTKACEStreamOption *option in [YTKACEStreamResolver optionsFromPlayerResponse:response]) {
         if (option.isAudioOnly) [tracks addObject:@{@"id":option.audioTrackID ?: @"", @"tags":option.xtags ?: @""}];
@@ -104,7 +116,6 @@ float TranslationVolume(NSString *key, float fallback) {
 @property(nonatomic) NSTimeInterval metadataCheckedAt;
 @property(nonatomic, copy) NSURL *remoteAudioURL;
 @property(nonatomic) BOOL cacheStarted;
-@property(nonatomic) NSUInteger metadataAttempts;
 @property(nonatomic, weak) UIViewController *volumeController;
 + (instancetype)shared;
 - (void)toggle:(UIButton *)button;
@@ -171,13 +182,16 @@ float TranslationVolume(NSString *key, float fallback) {
     if (![videoID isEqualToString:self.languageVideoID]) {
         self.languageVideoID = videoID; self.sourceLanguage = @"";
         self.autoAttemptedVideo = nil; self.metadataCheckedAt = 0;
-        self.metadataAttempts = 0;
-    }
-    if (!self.sourceLanguage.length && self.metadataAttempts < 8 && now - self.metadataCheckedAt > 2) {
-        self.metadataAttempts++;
-        self.metadataCheckedAt = now;
-        self.sourceLanguage = SourceLanguage(controller);
         [self updateButtons];
+    }
+    if (now - self.metadataCheckedAt > 1) {
+        self.metadataCheckedAt = now;
+        NSString *language = SourceLanguage(controller);
+        if (![language isEqualToString:self.sourceLanguage]) {
+            if ([self.sourceLanguage isEqualToString:@"ru"]) self.autoAttemptedVideo = nil;
+            self.sourceLanguage = language;
+            [self updateButtons];
+        }
     }
     if ([self.sourceLanguage isEqualToString:@"ru"]) {
         if ([self.videoID isEqualToString:videoID]) [self stop];
@@ -520,7 +534,15 @@ static void YTKACETranslationVolumeHold(UILongPressGestureRecognizer *gesture) {
 }
 @end
 
-static IMP OriginalTranslationPause, OriginalTranslationPlay;
+static IMP OriginalTranslationPause, OriginalTranslationPlay, OriginalTranslationAudioTrackChanged;
+static void TranslationAudioTrackChanged(id receiver, SEL selector, id track, NSInteger source) {
+    ((void (*)(id, SEL, id, NSInteger))OriginalTranslationAudioTrackChanged)(receiver, selector, track, source);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
+        coordinator.metadataCheckedAt = 0;
+        [coordinator observeVideo:coordinator.watchedController];
+    });
+}
 static void TranslationPause(id receiver, SEL selector, int reason) {
     dispatch_block_t pause = ^{
         YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
@@ -542,6 +564,8 @@ static void TranslationPlay(id receiver, SEL selector) {
     if (NSThread.isMainThread) play(); else dispatch_async(dispatch_get_main_queue(), play);
 }
 void YTKACEInstallTranslationHooks(void) {
+    YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayViewController", @"audioTrackDidChange:source:",
+        (IMP)TranslationAudioTrackChanged, &OriginalTranslationAudioTrackChanged);
     YTKACEInstallInstanceHook(@"YTSingleVideoController", @"pauseWithStoppageReason:",
         (IMP)TranslationPause, &OriginalTranslationPause);
     YTKACEInstallInstanceHook(@"YTSingleVideoController", @"play",

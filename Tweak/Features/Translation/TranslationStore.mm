@@ -8,6 +8,26 @@ static NSString *LanguageCode(id value) {
         [code rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyz"].invertedSet].location != NSNotFound) return @"";
     return [code isEqualToString:@"rus"] ? @"ru" : code;
 }
+NSString *YTKACETranslationTrackLanguage(id trackID, id tags, id displayName) {
+    NSString *code = LanguageCode(trackID);
+    if (code.length && ![code isEqualToString:@"und"]) return code;
+    if ([tags isKindOfClass:NSString.class]) {
+        NSString *decoded = [tags stringByRemovingPercentEncoding] ?: tags;
+        for (NSString *part in [decoded componentsSeparatedByString:@":"]) {
+            if ([part hasPrefix:@"lang="]) {
+                code = LanguageCode([part substringFromIndex:5]);
+                if (code.length && ![code isEqualToString:@"und"]) return code;
+            }
+        }
+    }
+    if ([displayName isKindOfClass:NSString.class]) {
+        NSString *name = [[displayName lowercaseString] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        for (NSString *russian in @[@"русский", @"russian"]) {
+            if ([name isEqualToString:russian] || [name hasPrefix:[russian stringByAppendingString:@" ("]]) return @"ru";
+        }
+    }
+    return @"";
+}
 NSString *YTKACETranslationLanguage(NSArray<NSDictionary *> *tracks, NSArray<NSDictionary *> *captions) {
     NSMutableSet *originals = [NSMutableSet set];
     for (NSDictionary *track in tracks) {

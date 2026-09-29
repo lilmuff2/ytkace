@@ -2,6 +2,7 @@
 
 // Empty means unknown; only original tracks or automatic captions identify source speech.
 NSString *YTKACETranslationLanguage(NSArray<NSDictionary *> *tracks, NSArray<NSDictionary *> *captions);
+NSString *YTKACETranslationTrackLanguage(id trackID, id tags, id displayName);
 BOOL YTKACETranslationShouldStart(NSString *language, NSNumber *remembered, BOOL automatic);
 
 @interface YTKACETranslationStore : NSObject <NSURLSessionDownloadDelegate>

@@ -14,7 +14,7 @@ be hidden in YTKACE's button settings.
 - Follows the active PiP player's clock. Stops on video changes, ads, external playback or interruptions.
 - Hold the translation button for original/translated volume sliders. Choices are remembered for the last 200 videos.
 - Completed voice-overs are cached locally (512 MiB total, 14-day expiry). The first playback still streams normally.
-- Optional automatic translation is off by default. Known Russian originals hide the button; unknown languages keep manual access.
+- Optional automatic translation is off by default. A known Russian selected audio track hides the button; unknown languages keep manual access. Audio track selection remains with YouTube.
 - No proxy, account sign-in, live videos or Shorts support.
 - The video link, duration and source-language hint are sent directly to Yandex
   only after tapping the button. When requested by Yandex, the selected video's

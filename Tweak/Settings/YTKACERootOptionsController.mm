@@ -467,7 +467,7 @@ UIViewController *YTKACEMakeDownloadLogController(void) {
         case 0: return 1;
         case 1: return 4;
         case 2: return 5;
-        case 3: return 3;
+        case 3: return YTKACELiquidGlassAvailable() ? 3 : 2;
         case 4: return 2;
         default: return 0;
     }
@@ -644,14 +644,16 @@ UIViewController *YTKACEMakeDownloadLogController(void) {
         NSArray *titles = @[YTKACELocalized(@"Navigation"), YTKACELocalized(@"Liquid Glass"), YTKACELocalized(@"Other")];
         NSArray *details = @[
             YTKACELocalized(@"Top bar buttons, logo, and cast"),
-            YTKACELocalized(@"Tab bar, menus, notices, and player"),
+            YTKACELocalized(@"Tab bar, menus, toasts, and player"),
             YTKACELocalized(@"Appearance, privacy, and compatibility")
         ];
         NSArray *symbols = @[@"rectangle.topthird.inset.filled", @"drop", @"ellipsis.circle"];
+        NSUInteger row = (NSUInteger)indexPath.row;
+        if (!YTKACELiquidGlassAvailable() && row >= 1) row++;
         UITableViewCell *cell = [self baseCellForTableView:tableView style:UITableViewCellStyleSubtitle];
-        cell.textLabel.text = titles[(NSUInteger)indexPath.row];
-        cell.detailTextLabel.text = details[(NSUInteger)indexPath.row];
-        [self configureImageForCell:cell asset:@"" symbol:symbols[(NSUInteger)indexPath.row]];
+        cell.textLabel.text = titles[row];
+        cell.detailTextLabel.text = details[row];
+        [self configureImageForCell:cell asset:@"" symbol:symbols[row]];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return cell;
     }
@@ -730,7 +732,9 @@ UIViewController *YTKACEMakeDownloadLogController(void) {
             [^UIViewController *{ return YTKACEMakeGlassOptionsController(); } copy],
             [^UIViewController *{ return YTKACEMakeMiscOptionsController(); } copy]
         ];
-        UIViewController *(^builder)(void) = builders[(NSUInteger)indexPath.row];
+        NSUInteger row = (NSUInteger)indexPath.row;
+        if (!YTKACELiquidGlassAvailable() && row >= 1) row++;
+        UIViewController *(^builder)(void) = builders[row];
         controller = builder();
     }
     if (controller != nil) {

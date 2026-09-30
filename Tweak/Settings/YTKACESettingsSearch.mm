@@ -16,6 +16,8 @@ static UIViewController *YTKACEControllerForPageID(NSString *pageID) {
             @"overlay": ^UIViewController *{ return YTKACEMakeOverlayOptionsController(); },
             @"playback": ^UIViewController *{ return YTKACEMakeStreamingOptionsController(); },
             @"navigation": ^UIViewController *{ return YTKACEMakeNavigationOptionsController(); },
+            @"glass": ^UIViewController *{ return YTKACEMakeGlassOptionsController(); },
+            @"tabs": ^UIViewController *{ return YTKACEMakeTabBarOptionsController(); },
             @"shorts": ^UIViewController *{ return YTKACEMakeShortsOptionsController(); },
             @"other": ^UIViewController *{ return YTKACEMakeMiscOptionsController(); },
             @"gestures": ^UIViewController *{ return YTKACEMakeGestureOptionsController(); }

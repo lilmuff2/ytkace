@@ -48,8 +48,19 @@ static IMP OriginalCurrentVideoMediaTime;
 static IMP OriginalSeekToTime;
 static IMP OriginalHandleError;
 
+NSInteger YTKACEPlaybackFixMode(void) {
+    if (!YTKACEMasterEnabled()) return 0;
+    id stored = YTKACEPreferenceObject(@"YTKACE.Preference.Playback.FixMode");
+    if ([stored respondsToSelector:@selector(integerValue)]) {
+        const NSInteger mode = [stored integerValue];
+        return mode >= 0 && mode <= 2 ? mode : 0;
+    }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Playback.HLSMode")) return 2;
+    return YTKACEFeatureEnabled(YTKACEPlaybackFixKey) ? 1 : 0;
+}
+
 static BOOL YTKACEPlaybackFixEnabled(void) {
-    return YTKACEFeatureEnabled(YTKACEPlaybackFixKey);
+    return YTKACEPlaybackFixMode() == 1;
 }
 
 static id YTKACEParentResponder(id overlay) {
@@ -164,6 +175,33 @@ static void YTKACECallOriginalHandleError(id receiver, SEL selector, id error) {
 }
 
 static void YTKACEHandleError(id receiver, SEL selector, id error) {
+    if (YTKACEPlaybackFixMode() == 2) {
+        NSError *hlsError = [error isKindOfClass:NSError.class] ? error : nil;
+        YTKACEDownloadLog(@"hls", @"player error domain=%@ code=%ld", hlsError.domain ?: @"-",
+                          (long)hlsError.code);
+        SEL parentGetter = NSSelectorFromString(@"parentViewController");
+        id pvc = [receiver respondsToSelector:parentGetter]
+            ? ((id (*)(id, SEL))objc_msgSend)(receiver, parentGetter) : nil;
+        SEL videoGetter = NSSelectorFromString(@"currentVideoID");
+        NSString *videoID = [pvc respondsToSelector:videoGetter]
+            ? ((id (*)(id, SEL))objc_msgSend)(pvc, videoGetter) : nil;
+        __weak id weakReceiver = receiver;
+        __weak id weakPlayer = pvc;
+        const BOOL started = [videoID isKindOfClass:NSString.class] &&
+            YTKACEHLSBeginFallback(videoID, ^(BOOL available) {
+                id strongReceiver = weakReceiver;
+                id strongPlayer = weakPlayer;
+                if (available && strongPlayer != nil && YTKACEReloadPlayer(strongPlayer, @"hls fallback")) {
+                    YTKACEDownloadLog(@"hls", @"fallback to vision video=%@", videoID);
+                    return;
+                }
+                YTKACEDownloadLog(@"hls", @"fallback unavailable video=%@", videoID);
+                if (strongReceiver != nil) YTKACECallOriginalHandleError(strongReceiver, selector, error);
+            });
+        if (started) return;
+        YTKACECallOriginalHandleError(receiver, selector, error);
+        return;
+    }
     if (!YTKACEPlaybackFixEnabled()) {
         YTKACECallOriginalHandleError(receiver, selector, error);
         return;

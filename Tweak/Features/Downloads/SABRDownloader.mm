@@ -117,7 +117,6 @@ void YTKACESABRSetNativeHeaders(NSDictionary<NSString *, NSString *> *headers) {
         [summary addObject:[NSString stringWithFormat:@"%@:%lu", key,
             (unsigned long)[headers[key] length]]];
     }
-    YTKACEDownloadLog(@"native", @"headers %@", [summary componentsJoinedByString:@","]);
 }
 
 static NSDictionary<NSString *, NSString *> *YTKACESABRCurrentNativeHeaders(
@@ -137,10 +136,6 @@ void YTKACESABRSetNativeRequest(NSURLRequest *request) {
     if (request == nil) return;
     BOOL usable = YTKACESABRIsPlaybackBody(request.HTTPBody);
     if (!usable) {
-        YTKACEDownloadLog(@"native", @"body ignored video=%@ bytes=%lu fields=%@",
-            YTKACESABRCurrentVideoID ?: @"unknown",
-            (unsigned long)request.HTTPBody.length,
-            YTKACEPBFieldSummary(request.HTTPBody));
         return;
     }
     YTKACESABRSetNativeHeaders(request.allHTTPHeaderFields);
@@ -171,12 +166,6 @@ void YTKACESABRSetNativeRequest(NSURLRequest *request) {
             YTKACESABRHeadersByConfig[config] = [request.allHTTPHeaderFields copy];
         }
     }
-    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"ytkace-native.pb"];
-    [request.HTTPBody writeToFile:path atomically:YES];
-    YTKACEDownloadLog(@"native", @"body video=%@ bytes=%lu fields=%@ dump=%@",
-        YTKACESABRCurrentVideoID ?: @"unknown",
-        (unsigned long)request.HTTPBody.length,
-        YTKACEPBFieldSummary(request.HTTPBody), path);
 }
 
 static BOOL YTKACESABRHasExactNativeBody(NSString *videoID, NSData *config) {
@@ -215,7 +204,6 @@ static NSData *YTKACESABRDecodeTokenString(NSString *value) {
 
 void YTKACESABRSetPoToken(id token) {
     NSData *data = nil;
-    NSString *encoding = @"raw";
     if ([token isKindOfClass:NSData.class]) {
         data = token;
         NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -226,13 +214,11 @@ void YTKACESABRSetPoToken(id token) {
                 NSData *decoded = YTKACESABRDecodeTokenString(text);
                 if (decoded.length != 0) {
                     data = decoded;
-                    encoding = @"base64url";
                 }
             }
         }
     } else if ([token isKindOfClass:NSString.class]) {
         data = YTKACESABRDecodeTokenString(token);
-        encoding = @"base64url";
     } else if ([token respondsToSelector:NSSelectorFromString(@"poToken")]) {
         id value = ((id (*)(id, SEL))objc_msgSend)(token, NSSelectorFromString(@"poToken"));
         if (value != token) YTKACESABRSetPoToken(value);
@@ -242,8 +228,12 @@ void YTKACESABRSetPoToken(id token) {
     @synchronized (YTKACESABRDownloader.class) {
         YTKACESABRPoToken = [data copy];
     }
-    YTKACEDownloadLog(@"token", @"captured PoToken bytes=%lu encoding=%@",
-        (unsigned long)data.length, encoding);
+}
+
+NSUInteger YTKACESABRPoTokenLength(void) {
+    @synchronized (YTKACESABRDownloader.class) {
+        return YTKACESABRPoToken.length;
+    }
 }
 
 NSString *YTKACESABRPoTokenString(void) {

@@ -5,6 +5,7 @@
 #import "YTKACEDownloadsController.h"
 #import "../Runtime/Hooking.h"
 #import "../UI/Assets.h"
+#import "../YTKACE.h"
 
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
@@ -99,7 +100,7 @@ static NSString *YTKACENativeSettingsSubtitle(NSString *title) {
             @"Playback": @"Quality menu, autoplay and skip timing",
             @"Shorts": @"Playback, feed and action buttons",
             @"Navigation": @"Top buttons, branding and topic chips",
-            @"Liquid Glass": @"Tab bar, menus, notices, and player",
+            @"Liquid Glass": @"Tab bar, menus, toasts, and player",
             @"Tabs": @"Choose and reorder bottom tabs",
             @"Gestures": @"Brightness, volume, hold and tap to seek",
             @"Other": @"OLED, startup, sharing, layout and prompts",
@@ -442,6 +443,7 @@ static void YTKACEUpdateNativeSettingsSection(id receiver, SEL selector,
     for (NSDictionary *definition in YTKACENativeLayout()) {
         NSString *kind = definition[@"kind"];
         NSString *title = definition[@"title"];
+        if ([title isEqualToString:@"Liquid Glass"] && !YTKACELiquidGlassAvailable()) continue;
         id item = nil;
         if ([kind isEqualToString:@"search"]) {
             item = YTKACENativeSearchRow(settingsController);

@@ -3100,6 +3100,12 @@ static BOOL YTKACEApplyPivotBarGlass(UIView *receiver, UIView *blur) {
     return YES;
 }
 
+static IMP OriginalSearchOptOutFrostedPivot;
+
+static BOOL YTKACESearchOptOutFrostedPivot(__unused id receiver, __unused SEL selector) {
+    return NO;
+}
+
 static void YTKACEApplyPivotBarBackground(UIView *receiver) {
     if (YTKACERefreshTabTint()) {
         for (UIView *item in YTKACESortedPivotItems(receiver)) {
@@ -3441,6 +3447,10 @@ void YTKACEInstallTabBarHooks(void) {
                                   @"updatePivotBarVisibilityForScrollView:contentOffsetY:isAtBottom:",
                                   (IMP)YTKACEUpdatePivotBarVisibility,
                                   &OriginalUpdatePivotBarVisibility);
+        YTKACEInstallInstanceHook(@"YTSearchResultsViewController",
+                                  @"optOutOfFrostedPivotBar",
+                                  (IMP)YTKACESearchOptOutFrostedPivot,
+                                  &OriginalSearchOptOutFrostedPivot);
     }
     YTKACEInstallInstanceHook(@"YTPivotBarView",
                               @"hitTest:withEvent:",

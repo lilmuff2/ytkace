@@ -64,7 +64,7 @@ NSString *SourceLanguage(id controller) {
     track = Object(Object(controller, @"activeVideoPlayerOverlay"), @"selectedAudioTrack");
     selected = YTKACETranslationTrackLanguage(Object(track, @"id_p"), nil, Object(track, @"displayName"));
     if (selected.length) return selected;
-    id response = Object(controller, @"contentPlayerResponse");
+    id response = YTKACEHLSOriginalResponse(VideoID(controller)) ?: Object(controller, @"contentPlayerResponse");
     if (!Object(response, @"captions")) response = Object(response, @"playerData") ?: response;
     NSMutableArray *tracks = [NSMutableArray array], *captions = [NSMutableArray array];
     for (YTKACEStreamOption *option in [YTKACEStreamResolver optionsFromPlayerResponse:response]) {
@@ -231,7 +231,7 @@ float TranslationVolume(NSString *key, float fallback) {
     [self stop]; YTKACEShowNotice(YTKACELocalized(message));
 }
 - (void)downloadSourceAudio:(void (^)(NSData *, NSInteger, NSError *))completion {
-    id response = Object(self.controller, @"contentPlayerResponse");
+    id response = YTKACEHLSOriginalResponse(self.videoID) ?: Object(self.controller, @"contentPlayerResponse");
     if (![[YTKACEStreamResolver videoIDFromPlayerResponse:response] isEqualToString:self.videoID])
         response = YTKACECachedPlayerResponse(self.videoID);
     YTKACEStreamOption *option = [YTKACEStreamResolver audioOptionsFromPlayerResponse:response].firstObject

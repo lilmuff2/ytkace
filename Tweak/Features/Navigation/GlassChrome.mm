@@ -131,6 +131,24 @@ static void YTKACERestoreButtons(UIView *container) {
 
 static void YTKACEQuietButtonsIn(UIView *view);
 
+static CGFloat YTKACEResultsSearchHeight(UIView *container) {
+    UIView *header = container.superview;
+    while (header != nil && ![NSStringFromClass(header.class) isEqualToString:@"YTHeaderView"]) header = header.superview;
+    if (header == nil) return 0.0;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:header];
+    NSUInteger visited = 0;
+    while (queue.count != 0 && visited < 200) {
+        UIView *node = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        visited++;
+        if ([NSStringFromClass(node.class) isEqualToString:@"YTSearchBarView"]) {
+            return node.hidden || node.window == nil ? 0.0 : CGRectGetHeight(node.bounds);
+        }
+        [queue addObjectsFromArray:node.subviews];
+    }
+    return 0.0;
+}
+
 static void YTKACEApplyNativeGlass(UIView *container, const void *key) {
     UIVisualEffectView *glass = YTKACEChromeGlass(container, key);
     if (glass.superview != container) {
@@ -146,15 +164,26 @@ static void YTKACEApplyNativeGlass(UIView *container, const void *key) {
     }
     glass.userInteractionEnabled = YES;
     glass.clipsToBounds = NO;
-    glass.frame = container.bounds;
-    glass.layer.cornerRadius = CGRectGetHeight(container.bounds) * 0.5;
+    CGRect target = container.bounds;
+    CGFloat compact = YTKACEResultsSearchHeight(container);
+    if (compact > 20.0 && compact < CGRectGetHeight(target) - 1.0) {
+        CGFloat inset = (CGRectGetHeight(target) - compact) * 0.5;
+        target = CGRectInset(target, inset, inset);
+    }
     for (UIView *subview in container.subviews.copy) {
         if (subview == glass) continue;
         CGRect frame = subview.frame;
         [glass.contentView addSubview:subview];
         subview.frame = frame;
     }
-    CGFloat rowHeight = CGRectGetHeight(glass.bounds);
+    glass.frame = target;
+    glass.layer.cornerRadius = CGRectGetHeight(target) * 0.5;
+    CGRect content = glass.contentView.bounds;
+    if (!CGPointEqualToPoint(content.origin, target.origin)) {
+        content.origin = target.origin;
+        glass.contentView.bounds = content;
+    }
+    CGFloat rowHeight = CGRectGetHeight(container.bounds);
     for (UIView *subview in glass.contentView.subviews) {
         CGRect frame = subview.frame;
         CGFloat centeredY = (rowHeight - CGRectGetHeight(frame)) * 0.5;
@@ -581,6 +610,22 @@ static void YTKACEUpdateMultiSearch(UIView *field) {
     objc_setAssociatedObject(strip, YTKACESideButtonsAssociation, current, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
+static IMP OriginalSearchBarLayout;
+
+static void YTKACESearchBarLayout(UIView *receiver, SEL selector) {
+    if (OriginalSearchBarLayout != NULL) ((void (*)(id, SEL))OriginalSearchBarLayout)(receiver, selector);
+    if (!YTKACEGlassChromeEnabled() || CGRectIsEmpty(receiver.bounds)) {
+        YTKACERemoveChromeGlass(receiver, YTKACESearchBarGlassAssociation);
+        return;
+    }
+    UIVisualEffectView *glass = YTKACEChromeGlass(receiver, YTKACESearchBarGlassAssociation);
+    if (glass.superview != receiver) [receiver insertSubview:glass atIndex:0];
+    else if (receiver.subviews.firstObject != glass) [receiver sendSubviewToBack:glass];
+    glass.frame = receiver.bounds;
+    glass.layer.cornerRadius = CGRectGetHeight(receiver.bounds) * 0.5;
+    receiver.backgroundColor = UIColor.clearColor;
+}
+
 static void YTKACEMultiSearchLayout(UIView *receiver, SEL selector) {
     if (OriginalMultiSearchLayout != NULL) ((void (*)(id, SEL))OriginalMultiSearchLayout)(receiver, selector);
     YTKACEUpdateMultiSearch(receiver);
@@ -724,6 +769,8 @@ __attribute__((constructor)) static void YTKACEInstallGlassChrome(void) {
     if (!YTKACEGlassChromeEnabled()) return;
     YTKACEInstallInstanceHook(@"YTMultiLineSearchBarView", @"layoutSubviews",
                                            (IMP)YTKACEMultiSearchLayout, &OriginalMultiSearchLayout);
+    YTKACEInstallInstanceHook(@"YTSearchBarView", @"layoutSubviews",
+                              (IMP)YTKACESearchBarLayout, &OriginalSearchBarLayout);
     YTKACEInstallInstanceHook(@"YTMultiLineSearchBarView", @"didMoveToWindow",
                               (IMP)YTKACEMultiSearchMoveToWindow, &OriginalMultiSearchMoveToWindow);
     YTKACEInstallInstanceHook(@"UIBarButtonItem", @"setHidesSharedBackground:",

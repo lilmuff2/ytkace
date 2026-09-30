@@ -48,9 +48,10 @@ static NSError *YTKACEDirectError(NSInteger code, NSString *message) {
 
 static NSDictionary *YTKACEDirectContext(NSString *visitor) {
     NSMutableDictionary *client = [@{
-        @"clientName": @"VISIONOS", @"clientVersion": @"0.1",
-        @"osName": @"visionOS", @"osVersion": @"1.02",
+        @"clientName": @"VISIONOS", @"clientVersion": @"1.02",
+        @"osName": @"visionOS", @"osVersion": @"26.5.23O471",
         @"deviceMake": @"Apple", @"deviceModel": @"RealityDevice17,1",
+        @"userAgent": YTKACEDirectUserAgent,
         @"hl": @"en", @"gl": @"US"} mutableCopy];
     if (visitor.length != 0) client[@"visitorData"] = visitor;
     return @{@"client": client};

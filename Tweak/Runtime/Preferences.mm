@@ -126,6 +126,7 @@ void YTKACERegisterDefaults(void) {
         @"YTKACE.Preference.Gestures.HUDPosition": @0,
         @"YTKACE.Preference.Tabs.Startup": @"",
         @"YTKACE.Preference.Shorts.LimitEnabled": @NO,
+        @"YTKACE.Preference.Playback.HLSMode": @NO,
         @"YTKACE.Preference.Playback.Fix": @NO,
         @"YTKACE.Preference.Shorts.LimitCount": @20,
         @"YTKACE.Preference.Tabs.FrostedHidden": @NO,

@@ -28,6 +28,10 @@ MIT License, Copyright (c) 2026 Mark02.
 
 `Tweak/Features/Streaming/TVClient.mm` requests streams as YouTube's TV client. The client name, version, device fields and user agent it sends, and the order of requests (a visitor ID from `/guide`, then `/player` with the player's signature timestamp), follow the values and approach published by the [Morphe](https://github.com/MorpheApp/morphe-patches) project. No Morphe code is used.
 
+## visionOS client identifiers
+
+`Tweak/Features/Streaming/HLSPlayback.mm` and `Tweak/Features/Downloads/DirectDownloader.mm` request streams as YouTube's visionOS client. The client name, version, device and OS fields and user agent they send are the values published by [yt-dlp](https://github.com/yt-dlp/yt-dlp), which is released under the Unlicense. No yt-dlp code is used.
+
 ## YTLiquidGlass
 
 The Liquid Glass tab bar and top bar in `Tweak/Features/Navigation/TabBarHooks.mm` and `GlassChrome.mm` build on ideas from [YTLiquidGlass](https://github.com/UltraGeek0102/YTLiquidGlassEXTRA) by UltraGeek0102, used with permission: fading YouTube's own tab bar background instead of removing it, selecting tabs through the pivot bar controller, and placing glass behind the top right buttons, search bar and header buttons. The code here was written for YTKACE.

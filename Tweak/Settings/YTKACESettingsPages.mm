@@ -1518,9 +1518,11 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
         ],
         @[
             YTKACEToggle(@"Remove Ads", YTKACENoAdsKey, @"", @""),
-            YTKACEToggleDetail(@"Playback Fix (test)",
-                @"Reloads the video when playback fails. Restart YouTube after changing.",
-                @"YTKACE.Preference.Playback.Fix")
+            YTKACEPickerDetail(@"Playback Fix (test)",
+                @"Restart YouTube after changing.",
+                @"YTKACE.Preference.Playback.FixMode",
+                @[@"Off", @"Reload", @"HLS Streams"],
+                @[@0, @1, @2], (NSUInteger)YTKACEPlaybackFixMode())
         ],
         progressSection,
         @[
@@ -1680,7 +1682,7 @@ static NSDictionary *YTKACEGlassOptionsDefinition(void) {
             YTKACEToggle(@"Tab Bar", @"YTKACE.Preference.Tabs.Glass", @"", @""),
             YTKACEToggle(@"Top Bar Buttons", @"YTKACE.Preference.Glass.TopBar", @"", @""),
             YTKACEToggle(@"Menus and Sheets", @"YTKACE.Preference.Glass.Menus", @"", @""),
-            YTKACEToggle(@"Notices", @"YTKACE.Preference.Glass.Notices", @"", @""),
+            YTKACEToggle(@"YTKACE Toasts and Popups", @"YTKACE.Preference.Glass.Notices", @"", @""),
             YTKACEToggle(@"Player Buttons", @"YTKACE.Preference.Glass.Player", @"", @"")
         ],
         @[
@@ -1863,7 +1865,7 @@ UIViewController *YTKACEMakeGestureOptionsController(void) {
 }
 
 NSArray<NSDictionary *> *YTKACEAllPageDefinitions(void) {
-    return @[
+    NSArray *pages = @[
         YTKACESponsorBlockDefinition(),
         YTKACEPlayerControlsDefinition(),
         YTKACEOverlayOptionsDefinition(),
@@ -1874,6 +1876,18 @@ NSArray<NSDictionary *> *YTKACEAllPageDefinitions(void) {
         YTKACEMiscOptionsDefinition(),
         YTKACEGestureOptionsDefinition()
     ];
+    if (YTKACELiquidGlassAvailable()) return pages;
+    NSMutableArray *filtered = [pages mutableCopy];
+    [filtered replaceObjectAtIndex:5 withObject:YTKACEPageDefinition(@"tabs", @"Tabs", @[
+        @[
+            @{}, @{}, @{},
+            YTKACEPicker(@"Selected Tab Color", @"YTKACE.Preference.Tabs.SelectedTint",
+                         @[YTKACELocalized(@"Off"), YTKACELocalized(@"Text Only"), YTKACELocalized(@"Text and Icon")],
+                         @[@0, @1, @2], 0, @"", @""),
+            YTKACEColor(@"Color", @"YTKACE.Preference.Tabs.SelectedTintColor", @"#0A84FF")
+        ]
+    ], @[YTKACELocalized(@"MAIN")])];
+    return filtered;
 }
 
 UIViewController *YTKACEMakeCreditsController(void) {

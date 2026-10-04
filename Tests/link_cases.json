@@ -1,0 +1,20 @@
+[
+  {"input":"https://youtube.com", "output":"youtube://www.youtube.com/"},
+  {"input":"https://youtube.com:443/watch?v=Nbwv5wHQoj0", "output":"youtube://www.youtube.com/watch?v=Nbwv5wHQoj0"},
+  {"input":"https://youtu.be/Nbwv5wHQoj0?si=abc&t=90", "output":"youtube://www.youtube.com/watch?si=abc&t=90&v=Nbwv5wHQoj0"},
+  {"input":"https://youtu.be/kdzREe7B6Ks?v=wrong", "output":"youtube://www.youtube.com/watch?v=kdzREe7B6Ks"},
+  {"input":"https://www.youtube.com/watch?v=Nbwv5wHQoj0&list=PL123&t=120", "output":"youtube://www.youtube.com/watch?v=Nbwv5wHQoj0&list=PL123&t=120"},
+  {"input":"https://m.youtube.com/shorts/Nbwv5wHQoj0", "output":"youtube://www.youtube.com/shorts/Nbwv5wHQoj0"},
+  {"input":"https://youtube.com/live/Nbwv5wHQoj0", "output":"youtube://www.youtube.com/live/Nbwv5wHQoj0"},
+  {"input":"https://www.youtube.com/@example/videos", "output":"youtube://www.youtube.com/@example/videos"},
+  {"input":"https://www.youtube.com/clip/Ug123", "output":"youtube://www.youtube.com/clip/Ug123"},
+  {"input":"http://www.youtube.com/playlist?list=PL123", "output":"youtube://www.youtube.com/playlist?list=PL123"},
+  {"input":"https://youtu.be/invalid", "output":null},
+  {"input":"https://youtube.com.evil.example/watch?v=Nbwv5wHQoj0", "output":null},
+  {"input":"https://evil.example/?next=https://www.youtube.com/watch?v=Nbwv5wHQoj0", "output":null},
+  {"input":"https://youtube.com@evil.example/watch", "output":null},
+  {"input":"https://user:pass@youtube.com/watch", "output":null},
+  {"input":"https://youtube.com:8443/watch", "output":null},
+  {"input":"javascript:alert(1)", "output":null},
+  {"input":"file:///youtube.com/watch", "output":null}
+]

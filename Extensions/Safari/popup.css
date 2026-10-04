@@ -1,0 +1,6 @@
+:root { color-scheme:light dark; font:16px/1.5 system-ui; }
+body { margin:0; padding:16px; min-width:240px; max-width:360px; background:Canvas; color:CanvasText; }
+h1 { font-size:20px; margin:0 0 8px; } p { margin:8px 0 16px; }
+a { display:flex; min-height:44px; align-items:center; justify-content:center; background:#a50000; color:white; border-radius:12px; text-decoration:none; font-weight:600; }
+a[hidden] { display:none; } a:active { background:#780000; }
+a:focus-visible { outline:3px solid #007aff; outline-offset:3px; }

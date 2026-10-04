@@ -1,0 +1,13 @@
+{
+  "manifest_version": 2,
+  "name": "Открыть в YouTube",
+  "description": "Открывает ссылки YouTube в приложении.",
+  "version": "1.0",
+  "permissions": ["activeTab"],
+  "content_scripts": [{
+    "matches": ["https://www.youtube.com/*", "https://m.youtube.com/*", "https://youtube.com/*", "https://youtu.be/*"],
+    "js": ["link.js", "content.js"],
+    "run_at": "document_end"
+  }],
+  "browser_action": {"default_title": "Открыть в YouTube", "default_popup": "popup.html"}
+}

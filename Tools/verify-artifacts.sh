@@ -48,6 +48,34 @@ PY
   )"
   LOADS="$(python3 "$ROOT/Tools/macho_inject.py" "$APP/$EXECUTABLE" --list)"
   [[ "$LOADS" == *'@rpath/YTKACE.dylib'* ]]
+  python3 - "$APP" <<'PY'
+import json
+import pathlib
+import plistlib
+import sys
+
+app = pathlib.Path(sys.argv[1])
+info = plistlib.loads((app / 'Info.plist').read_bytes())
+schemes = [scheme for entry in info.get('CFBundleURLTypes', [])
+           for scheme in entry.get('CFBundleURLSchemes', [])]
+assert 'youtube' in schemes, 'YouTube URL handler missing'
+for name, point in [('YTKACEOpenSafari', 'com.apple.Safari.web-extension'),
+                    ('YTKACEOpenShare', 'com.apple.share-services')]:
+    extension = app / 'PlugIns' / (name + '.appex')
+    metadata = plistlib.loads((extension / 'Info.plist').read_bytes())
+    assert metadata['CFBundleIdentifier'] == info['CFBundleIdentifier'] + '.' + name
+    assert metadata['CFBundleVersion'] == info['CFBundleVersion']
+    assert metadata['CFBundleShortVersionString'] == info['CFBundleShortVersionString']
+    assert metadata['NSExtension']['NSExtensionPointIdentifier'] == point
+    assert (extension / metadata['CFBundleExecutable']).is_file()
+safari = app / 'PlugIns' / 'YTKACEOpenSafari.appex'
+manifest = json.loads((safari / 'manifest.json').read_text())
+assert (safari / manifest['browser_action']['default_popup']).is_file()
+for content in manifest['content_scripts']:
+    for script in content['js']:
+        assert (safari / script).is_file()
+print('Safari and share extensions verified')
+PY
 fi
 
 echo "verified"

@@ -15,6 +15,7 @@ static IMP OriginalVideoSetControlsVisible;
 static IMP OriginalControlsSetHidden;
 static const void *YTKACEOverlayStackAssociation = &YTKACEOverlayStackAssociation;
 static const void *YTKACEOverlayTopStackAssociation = &YTKACEOverlayTopStackAssociation;
+static const void *YTKACEOverlayTopAnchorsAssociation = &YTKACEOverlayTopAnchorsAssociation;
 static const void *YTKACEOverlayTrailingAssociation = &YTKACEOverlayTrailingAssociation;
 static const void *YTKACEOverlayAlignmentAssociation = &YTKACEOverlayAlignmentAssociation;
 static NSMutableArray<NSDictionary *> *YTKACEOverlayConfigurators;
@@ -23,10 +24,11 @@ static BOOL YTKACENativeControlsVisible = YES;
 static void YTKACEFindSettingsControlInView(UIView *view,
                                             UIView *excluded,
                                             UIView *coordinateView,
+                                            BOOL includeFaded,
                                             UIView **best,
                                             CGFloat *bestScore) {
     if (view == excluded || [view isDescendantOfView:excluded] ||
-        view.hidden || view.alpha < 0.05) {
+        (!includeFaded && (view.hidden || view.alpha < 0.05))) {
         return;
     }
     NSString *hint = [[NSString stringWithFormat:@"%@ %@ %@",
@@ -53,7 +55,7 @@ static void YTKACEFindSettingsControlInView(UIView *view,
     }
     for (UIView *subview in view.subviews) {
         YTKACEFindSettingsControlInView(subview, excluded, coordinateView,
-                                        best, bestScore);
+                                        includeFaded, best, bestScore);
     }
 }
 
@@ -83,10 +85,10 @@ static UIView *YTKACEFindSettingsControl(UIView *overlay, UIView *excluded) {
     UIView *best = nil;
     CGFloat bestScore = -CGFLOAT_MAX;
     YTKACEFindSettingsControlInView(overlay, excluded, overlay,
-                                    &best, &bestScore);
+                                    NO, &best, &bestScore);
     if (best == nil && overlay.window != nil) {
         YTKACEFindSettingsControlInView(overlay.window, excluded, overlay,
-                                        &best, &bestScore);
+                                        NO, &best, &bestScore);
     }
     return best;
 }
@@ -278,6 +280,8 @@ UIStackView *YTKACEOverlayTopStack(UIView *overlay) {
     stack.axis = UILayoutConstraintAxisHorizontal;
     stack.alignment = UIStackViewAlignmentCenter;
     stack.spacing = 8.0;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.hidden = YES;
     stack.alpha = YTKACENativeControlsVisible ? 1.0 : 0.0;
     stack.userInteractionEnabled = YTKACENativeControlsVisible;
     stack.accessibilityIdentifier = @"YTKACEOverlayControlsTop";
@@ -287,22 +291,23 @@ UIStackView *YTKACEOverlayTopStack(UIView *overlay) {
     return stack;
 }
 
-static void YTKACEFindTopRowLeadingEdge(UIView *view, UIView *overlay,
-                                        CGRect gearFrame, CGFloat *leading) {
-    if (view.hidden || view.alpha < 0.05 ||
-        [view.accessibilityIdentifier hasPrefix:@"YTKACEOverlayControls"]) return;
-    if ([view isKindOfClass:UIControl.class] && !CGRectIsEmpty(view.bounds)) {
+static void YTKACEFindTopRowLeadingControl(UIView *view, UIView *overlay,
+                                           CGRect gearFrame, UIView **leading) {
+    if ([view.accessibilityIdentifier hasPrefix:@"YTKACEOverlayControls"]) return;
+    // Alpha is an animation state, not a reason to change the row's anchors.
+    if (!view.hidden && [view isKindOfClass:UIControl.class] && !CGRectIsEmpty(view.bounds)) {
         CGRect frame = [view convertRect:view.bounds toView:overlay];
         // Only the compact native buttons beside the gear belong to this row.
         if (CGRectGetWidth(frame) >= 18.0 && CGRectGetWidth(frame) <= 64.0 &&
             CGRectGetMidX(frame) > CGRectGetWidth(overlay.bounds) * 0.55 &&
             fabs(CGRectGetMidY(frame) - CGRectGetMidY(gearFrame)) < 16.0 &&
             CGRectIntersectsRect(frame, overlay.bounds)) {
-            *leading = MIN(*leading, CGRectGetMinX(frame));
+            CGRect old = [*leading convertRect:(*leading).bounds toView:overlay];
+            if (CGRectGetMinX(frame) < CGRectGetMinX(old)) *leading = view;
         }
     }
     for (UIView *child in view.subviews)
-        YTKACEFindTopRowLeadingEdge(child, overlay, gearFrame, leading);
+        YTKACEFindTopRowLeadingControl(child, overlay, gearFrame, leading);
 }
 
 static void YTKACELayoutTopStack(UIView *overlay) {
@@ -310,22 +315,46 @@ static void YTKACELayoutTopStack(UIView *overlay) {
     if (stack == nil) return;
     BOOL visible = NO;
     for (UIView *button in stack.arrangedSubviews) if (!button.hidden) { visible = YES; break; }
-    stack.hidden = !visible;
-    if (!visible) return;
-    CGRect safe = overlay.safeAreaLayoutGuide.layoutFrame;
-    UIView *gear = YTKACEOverflowControl(overlay) ?: YTKACEFindSettingsControl(overlay, stack);
-    CGFloat leading = CGRectGetMaxX(safe) - 100.0;
-    CGFloat centerY = CGRectGetMinY(safe) + 22.0;
-    if (gear != nil) {
-        CGRect frame = [gear convertRect:gear.bounds toView:overlay];
-        leading = CGRectGetMinX(frame);
-        centerY = CGRectGetMidY(frame);
-        YTKACEFindTopRowLeadingEdge(overlay, overlay, frame, &leading);
+    if (!visible) { stack.hidden = YES; return; }
+    NSDictionary *anchors = objc_getAssociatedObject(stack, YTKACEOverlayTopAnchorsAssociation);
+    UIView *gear = anchors[@"gear"];
+    UIView *leading = anchors[@"leading"];
+    if (![gear isDescendantOfView:overlay] || ![leading isDescendantOfView:overlay]) {
+        [NSLayoutConstraint deactivateConstraints:anchors[@"constraints"] ?: @[]];
+        anchors = nil;
+        gear = nil;
+        leading = nil;
+        objc_setAssociatedObject(stack, YTKACEOverlayTopAnchorsAssociation, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    CGSize size = [stack systemLayoutSizeFittingSize:UILayoutFittingCompressedSize];
-    CGFloat x = MAX(CGRectGetMinX(safe), leading - 8.0 - size.width);
-    CGFloat y = MAX(CGRectGetMinY(safe), centerY - size.height * 0.5);
-    stack.frame = CGRectMake(x, y, size.width, size.height);
+    if (gear == nil) {
+        SEL selector = NSSelectorFromString(@"overflowButton");
+        id candidate = [overlay respondsToSelector:selector]
+            ? ((id (*)(id, SEL))objc_msgSend)(overlay, selector) : nil;
+        if ([candidate isKindOfClass:UIView.class] &&
+            [candidate isDescendantOfView:overlay] && YTKACEIsTopTrailingControl(candidate, overlay)) gear = candidate;
+        if (gear == nil) {
+            CGFloat score = -CGFLOAT_MAX;
+            YTKACEFindSettingsControlInView(overlay, stack, overlay, YES, &gear, &score);
+        }
+    }
+    if (gear == nil) { stack.hidden = YES; return; }
+    UIView *newLeading = gear;
+    if (anchors != nil && (!YTKACENativeControlsVisible || gear.hidden)) newLeading = leading;
+    else YTKACEFindTopRowLeadingControl(overlay, overlay,
+        [gear convertRect:gear.bounds toView:overlay], &newLeading);
+    if (anchors == nil || leading != newLeading) {
+        [NSLayoutConstraint deactivateConstraints:anchors[@"constraints"] ?: @[]];
+        NSArray *constraints = @[
+            [stack.trailingAnchor constraintEqualToAnchor:newLeading.leadingAnchor constant:-8.0],
+            [stack.centerYAnchor constraintEqualToAnchor:gear.centerYAnchor]
+        ];
+        [NSLayoutConstraint activateConstraints:constraints];
+        objc_setAssociatedObject(stack, YTKACEOverlayTopAnchorsAssociation,
+            @{@"gear": gear, @"leading": newLeading, @"constraints": constraints}, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    [UIView performWithoutAnimation:^{
+        stack.hidden = NO;
+    }];
 }
 
 UIButton *YTKACEOverlayButton(UIStackView *stack,

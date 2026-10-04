@@ -1,6 +1,7 @@
 #import "../../YTKACE.h"
 #import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
+#import "../../Runtime/Localization.h"
 #import "../../UI/Assets.h"
 #import "../../UI/OverlayButtonHost.h"
 
@@ -27,6 +28,11 @@ static const double YTKACERateReuseLast = -1.0;
 static const double YTKACERateUseCustom = -2.0;
 static const double YTKACERateFloor = 0.25;
 static const double YTKACERateCeiling = 5.0;
+static const float YTKACERateOptions[] = {
+    0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f,
+    2.5f, 3.0f, 3.5f, 4.0f, 4.5f, 5.0f
+};
+static const void *YTKACESpeedMenuRateAssociation = &YTKACESpeedMenuRateAssociation;
 
 static BOOL YTKACERateIsUsable(double rate) {
     return isfinite(rate) && rate >= YTKACERateFloor && rate <= YTKACERateCeiling;
@@ -193,6 +199,7 @@ static UIImage *YTKACESpeedButtonImage(BOOL plus) {
 - (void)increase;
 - (void)reset;
 - (void)valueTapped:(UIButton *)sender;
+- (void)updateValueButton;
 @end
 
 @implementation YTKACESpeedCoordinator
@@ -335,8 +342,7 @@ static UIImage *YTKACESpeedButtonImage(BOOL plus) {
         [NSUserDefaults.standardUserDefaults setFloat:(float)rate
                                                forKey:YTKACELastRateKey];
     }
-    [self.valueButton setTitle:YTKACESpeedText(rate)
-                      forState:UIControlStateNormal];
+    [self updateValueButton];
 }
 
 - (id)eventsDelegate {
@@ -417,8 +423,31 @@ static UIImage *YTKACESpeedButtonImage(BOOL plus) {
                                                forKey:YTKACELastRateKey];
     }
     self.observedRate = rate;
-    [self.valueButton setTitle:YTKACESpeedText(rate)
-                      forState:UIControlStateNormal];
+    [self updateValueButton];
+}
+
+- (void)updateValueButton {
+    UIButton *button = self.valueButton;
+    if (button == nil) return;
+    const double current = self.currentRate;
+    [button setTitle:YTKACESpeedText(current) forState:UIControlStateNormal];
+    button.accessibilityLabel = YTKACELocalized(@"Playback Speed");
+    button.accessibilityValue = YTKACESpeedText(current);
+    NSNumber *previous = objc_getAssociatedObject(button, YTKACESpeedMenuRateAssociation);
+    if (button.menu != nil && previous != nil && fabs(previous.doubleValue - current) < 0.001) return;
+    NSMutableArray<UIMenuElement *> *actions = [NSMutableArray array];
+    __weak YTKACESpeedCoordinator *weakSelf = self;
+    for (float rate : YTKACERateOptions) {
+        UIAction *action = [UIAction actionWithTitle:YTKACESpeedText(rate) image:nil identifier:nil
+            handler:^(__unused UIAction *item) { [weakSelf setRate:rate]; }];
+        action.state = fabs(current - rate) < 0.001 ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [actions addObject:action];
+    }
+    button.menu = [UIMenu menuWithTitle:YTKACELocalized(@"Playback Speed") children:actions];
+    // UIKit presents this menu on hold and cancels the button's ordinary tap.
+    button.showsMenuAsPrimaryAction = NO;
+    button.accessibilityHint = YTKACELocalized(@"Hold to choose playback speed");
+    objc_setAssociatedObject(button, YTKACESpeedMenuRateAssociation, @(current), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 - (void)decrease {
@@ -696,13 +725,11 @@ static id YTKACEVarispeedInit(id receiver, SEL selector) {
         id title = [option respondsToSelector:@selector(title)] ? [option valueForKey:@"title"] : nil;
         if ([title isKindOfClass:NSString.class]) titles[@(llroundf(rate * 100.0f))] = title;
     }
-    static const float rates[] = {0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f,
-                                  2.5f, 3.0f, 3.5f, 4.0f, 4.5f, 5.0f};
     NSMutableArray *options = [NSMutableArray array];
-    for (size_t index = 0; index < sizeof(rates) / sizeof(rates[0]); index++) {
-        NSString *title = titles[@(llroundf(rates[index] * 100.0f))] ?: YTKACESpeedText(rates[index]);
+    for (float rate : YTKACERateOptions) {
+        NSString *title = titles[@(llroundf(rate * 100.0f))] ?: YTKACESpeedText(rate);
         id option = ((id (*)(id, SEL, id, float))objc_msgSend)(
-            [optionClass alloc], initializer, title, rates[index]);
+            [optionClass alloc], initializer, title, rate);
         if (option != nil) [options addObject:option];
     }
     if (options.count != 0) [controller setValue:[options copy] forKey:@"_options"];
@@ -790,8 +817,7 @@ void YTKACEInstallSpeedHooks(void) {
         [minus setImage:YTKACESpeedButtonImage(NO) forState:UIControlStateNormal];
         [plus setImage:YTKACESpeedButtonImage(YES) forState:UIControlStateNormal];
         coordinator.valueButton = value;
-        [value setTitle:YTKACESpeedText(coordinator.currentRate)
-               forState:UIControlStateNormal];
+        [coordinator updateValueButton];
         [value setImage:nil forState:UIControlStateNormal];
         [value setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
         value.titleLabel.font = [UIFont systemFontOfSize:17.0 weight:UIFontWeightSemibold];

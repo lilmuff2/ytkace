@@ -6,6 +6,8 @@ An open-source YouTube enhancement for iOS.
 
 The IPA also includes Safari and share-sheet extensions for opening YouTube links in the app. See [setup and signing instructions](docs/open-in-youtube.md).
 
+The translation button sits beside YouTube's top controls. Hold the speed value in the player to choose 0.25x–5x from an iOS context menu; the current speed is marked.
+
 This fork adds an on-demand **Translate to Russian** button to the video player.
 Tap the speech-bubble button to request Russian voice-over from Yandex; tap again
 to cancel or restore the original audio. The button is enabled by default and can

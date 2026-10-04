@@ -159,7 +159,11 @@ float TranslationVolume(NSString *key, float fallback) {
 - (void)updateButtons {
     for (UIButton *button in self.buttons) {
         BOOL russian = [self.sourceLanguage isEqualToString:@"ru"] && [self.languageVideoID isEqualToString:VideoID(ControllerForView(button))];
-        button.hidden = !YTKACEFeatureEnabled(YTKACETranslationKey) || russian;
+        BOOL hidden = !YTKACEFeatureEnabled(YTKACETranslationKey) || russian;
+        if (button.hidden != hidden) {
+            button.hidden = hidden;
+            [button.superview.superview setNeedsLayout];
+        }
         button.tintColor = self.videoID ? UIColor.systemYellowColor : UIColor.whiteColor;
         NSString *state = !self.videoID ? @"Translate to Russian" : (self.loading ? @"Preparing translation. Tap to cancel." : @"Russian translation is on. Tap to turn off.");
         button.accessibilityLabel = YTKACELocalized(state);
@@ -572,7 +576,7 @@ void YTKACEInstallTranslationHooks(void) {
         (IMP)TranslationPlay, &OriginalTranslationPlay);
     YTKACERegisterOverlayConfigurator(@"translation", ^(UIView *overlay, UIStackView *stack) {
         YTKACETranslationCoordinator *coordinator = YTKACETranslationCoordinator.shared;
-        UIButton *button = YTKACEOverlayButton(stack, @"YTKACE Yandex Translation", @"character.bubble", coordinator, @selector(toggle:));
+        UIButton *button = YTKACEOverlayButton(YTKACEOverlayTopStack(overlay), @"YTKACE Yandex Translation", @"character.bubble", coordinator, @selector(toggle:));
         BOOL registered = [coordinator.buttons containsObject:button];
         [coordinator.buttons addObject:button];
         if (!registered) {

@@ -4,6 +4,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 typedef void (^YTKACEOverlayConfigurator)(UIView *overlay, UIStackView *stack);
 
+FOUNDATION_EXPORT UIStackView *YTKACEOverlayTopStack(UIView *overlay);
+
 FOUNDATION_EXPORT void YTKACERegisterOverlayConfigurator(
     NSString *identifier,
     YTKACEOverlayConfigurator configurator

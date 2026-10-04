@@ -492,6 +492,7 @@
 "Play in Background" = "Воспроизводить в фоне";
 "Play in External Player" = "Воспроизвести во внешнем плеере";
 "Playback Speed" = "Скорость воспроизведения";
+"Hold to choose playback speed" = "Удерживайте, чтобы выбрать скорость воспроизведения";
 "Playback Speed toggles" = "Кнопки скорости";
 "Playback failed." = "Сбой воспроизведения.";
 "Could not open the recovery details." = "Не удалось открыть сведения о восстановлении.";

@@ -14,6 +14,7 @@ static IMP OriginalVideoSetOverlayVisible;
 static IMP OriginalVideoSetControlsVisible;
 static IMP OriginalControlsSetHidden;
 static const void *YTKACEOverlayStackAssociation = &YTKACEOverlayStackAssociation;
+static const void *YTKACEOverlayTopStackAssociation = &YTKACEOverlayTopStackAssociation;
 static const void *YTKACEOverlayTrailingAssociation = &YTKACEOverlayTrailingAssociation;
 static const void *YTKACEOverlayAlignmentAssociation = &YTKACEOverlayAlignmentAssociation;
 static NSMutableArray<NSDictionary *> *YTKACEOverlayConfigurators;
@@ -165,7 +166,7 @@ static BOOL YTKACEKeepControlsVisible(void) {
 }
 
 static void YTKACESetHostedControlsHidden(UIView *view, BOOL hidden) {
-    if ([view.accessibilityIdentifier isEqualToString:@"YTKACEOverlayControls"]) {
+    if ([view.accessibilityIdentifier hasPrefix:@"YTKACEOverlayControls"]) {
         BOOL visible = !hidden;
         view.userInteractionEnabled = visible;
         if (visible) {
@@ -270,6 +271,63 @@ static UIStackView *YTKACEStackForOverlay(UIView *overlay) {
     return stack;
 }
 
+UIStackView *YTKACEOverlayTopStack(UIView *overlay) {
+    UIStackView *stack = objc_getAssociatedObject(overlay, YTKACEOverlayTopStackAssociation);
+    if (stack != nil) return stack;
+    stack = [UIStackView new];
+    stack.axis = UILayoutConstraintAxisHorizontal;
+    stack.alignment = UIStackViewAlignmentCenter;
+    stack.spacing = 8.0;
+    stack.alpha = YTKACENativeControlsVisible ? 1.0 : 0.0;
+    stack.userInteractionEnabled = YTKACENativeControlsVisible;
+    stack.accessibilityIdentifier = @"YTKACEOverlayControlsTop";
+    [overlay addSubview:stack];
+    objc_setAssociatedObject(overlay, YTKACEOverlayTopStackAssociation, stack,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return stack;
+}
+
+static void YTKACEFindTopRowLeadingEdge(UIView *view, UIView *overlay,
+                                        CGRect gearFrame, CGFloat *leading) {
+    if (view.hidden || view.alpha < 0.05 ||
+        [view.accessibilityIdentifier hasPrefix:@"YTKACEOverlayControls"]) return;
+    if ([view isKindOfClass:UIControl.class] && !CGRectIsEmpty(view.bounds)) {
+        CGRect frame = [view convertRect:view.bounds toView:overlay];
+        // Only the compact native buttons beside the gear belong to this row.
+        if (CGRectGetWidth(frame) >= 18.0 && CGRectGetWidth(frame) <= 64.0 &&
+            CGRectGetMidX(frame) > CGRectGetWidth(overlay.bounds) * 0.55 &&
+            fabs(CGRectGetMidY(frame) - CGRectGetMidY(gearFrame)) < 16.0 &&
+            CGRectIntersectsRect(frame, overlay.bounds)) {
+            *leading = MIN(*leading, CGRectGetMinX(frame));
+        }
+    }
+    for (UIView *child in view.subviews)
+        YTKACEFindTopRowLeadingEdge(child, overlay, gearFrame, leading);
+}
+
+static void YTKACELayoutTopStack(UIView *overlay) {
+    UIStackView *stack = objc_getAssociatedObject(overlay, YTKACEOverlayTopStackAssociation);
+    if (stack == nil) return;
+    BOOL visible = NO;
+    for (UIView *button in stack.arrangedSubviews) if (!button.hidden) { visible = YES; break; }
+    stack.hidden = !visible;
+    if (!visible) return;
+    CGRect safe = overlay.safeAreaLayoutGuide.layoutFrame;
+    UIView *gear = YTKACEOverflowControl(overlay) ?: YTKACEFindSettingsControl(overlay, stack);
+    CGFloat leading = CGRectGetMaxX(safe) - 100.0;
+    CGFloat centerY = CGRectGetMinY(safe) + 22.0;
+    if (gear != nil) {
+        CGRect frame = [gear convertRect:gear.bounds toView:overlay];
+        leading = CGRectGetMinX(frame);
+        centerY = CGRectGetMidY(frame);
+        YTKACEFindTopRowLeadingEdge(overlay, overlay, frame, &leading);
+    }
+    CGSize size = [stack systemLayoutSizeFittingSize:UILayoutFittingCompressedSize];
+    CGFloat x = MAX(CGRectGetMinX(safe), leading - 8.0 - size.width);
+    CGFloat y = MAX(CGRectGetMinY(safe), centerY - size.height * 0.5);
+    stack.frame = CGRectMake(x, y, size.width, size.height);
+}
+
 UIButton *YTKACEOverlayButton(UIStackView *stack,
                               NSString *identifier,
                               NSString *symbolName,
@@ -328,6 +386,7 @@ static void YTKACEControlsOverlayLayout(UIView *receiver, SEL selector) {
         }
     }
     stack.hidden = !visible || !aligned;
+    YTKACELayoutTopStack(receiver);
 }
 
 void YTKACERegisterOverlayConfigurator(NSString *identifier,
